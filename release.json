@@ -1,0 +1,55 @@
+{
+  "released_at": "2026-10-22T04:01:22.171373+00:00",
+  "host": "oci-node",
+  "services": {
+    "it-tools": {
+      "url": "https://tools.lfdou.ccwu.cc/",
+      "source": "https://github.com/doulongfei/it-tools",
+      "source_commit": "c706b117cfbcbbdcbb206c1c93a025df0fba9f79",
+      "image": "lfdou/it-tools:c706b117cfbcbbdcbb206c1c93a025df0fba9f79",
+      "image_id": "sha256:4734323e02beabb8030aaf8b6de427af7eb6f261a4137f9d323da4b781fb1d69",
+      "architecture": "arm64",
+      "memory_limit_bytes": 268435456,
+      "cpu_limit": 0.35,
+      "https_status": 200,
+      "http_redirect_status": 308
+    },
+    "bentopdf": {
+      "url": "https://pdf.lfdou.ccwu.cc/",
+      "source": "https://github.com/doulongfei/bentopdf",
+      "source_commit": "0e7607798f634c84a0e7d1a01189634e2f9994c0",
+      "image": "lfdou/bentopdf:0e7607798f634c84a0e7d1a01189634e2f9994c0",
+      "image_id": "sha256:77c4a9d8ee3211b3975a3b97dada13b2f3ea99e80d6e937031fc2a6eac9a0911",
+      "architecture": "arm64",
+      "memory_limit_bytes": 268435456,
+      "cpu_limit": 0.5,
+      "https_status": 200,
+      "http_redirect_status": 308
+    },
+    "libretranslate": {
+      "url": "https://tr.lfdou.ccwu.cc/",
+      "source": "https://github.com/doulongfei/LibreTranslate",
+      "source_commit": "97fe832350703990f2fc4b8fa9c0b1ff5d503814",
+      "image": "lfdou/libretranslate:97fe832350703990f2fc4b8fa9c0b1ff5d503814",
+      "image_id": "sha256:589cf9e27cab71256457b30ae4666c38116d8fbf0d5c783b5b5e82ba58a889b7",
+      "architecture": "arm64",
+      "memory_limit_bytes": 4294967296,
+      "cpu_limit": 1.25,
+      "https_status": 200,
+      "http_redirect_status": 308
+    }
+  },
+  "verification": {
+    "container_health": "passed",
+    "loopback_bindings": "passed",
+    "read_only_and_resource_limits": "passed",
+    "https_and_redirects": "passed",
+    "mac_ipv6_https_all_three": "passed",
+    "it_tools_base64_and_mobile_width": "passed",
+    "bentopdf_merge_two_pages_content_and_order": "passed",
+    "libretranslate_frontend_and_both_directions": "passed",
+    "libretranslate_character_batch_body_rate_limits_and_spoofed_forwarded_header": "passed",
+    "existing_network_services_and_quota": "passed"
+  },
+  "scope_note": "Representative functional checks only; not an exhaustive test of every upstream tool."
+}
