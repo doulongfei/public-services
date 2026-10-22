@@ -58,6 +58,7 @@ services:
     tmpfs:
       - /tmp:size=64m,mode=1777
       - /etc/nginx/tmp:size=32m,uid=101,gid=101
+      - /var/cache/nginx:size=64m,uid=101,gid=101
     healthcheck:
       test: [CMD, wget, --spider, -q, http://127.0.0.1:8080/]
       interval: 30s
@@ -91,9 +92,10 @@ services:
       LT_FRONTEND_LANGUAGE_SOURCE: auto
       LT_FRONTEND_LANGUAGE_TARGET: zh
       LT_FRONTEND_TITLE: LF 中英翻译
-      LT_FRONTEND_TIMEOUT: '120000'
+      LT_FRONTEND_TIMEOUT: '500'
       LT_API_KEYS_DB_PATH: /app/db/api_keys.db
       ARGOS_DEVICE_TYPE: cpu
+      XDG_CONFIG_HOME: /home/libretranslate/.cache/config
     volumes:
       - ../data/libretranslate/models:/home/libretranslate/.local
       - ../data/libretranslate/cache:/home/libretranslate/.cache
@@ -105,7 +107,7 @@ services:
     tmpfs:
       - /tmp:size=256m,mode=1777
     healthcheck:
-      test: [CMD, ./venv/bin/python, scripts/healthcheck.py]
+      test: [CMD, ./venv/bin/python, -c, "import requests; requests.get('http://127.0.0.1:5000/health', json={}, timeout=5).raise_for_status()"]
       interval: 60s
       timeout: 10s
       retries: 5
