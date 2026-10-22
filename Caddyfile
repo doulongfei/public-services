@@ -1,5 +1,5 @@
 # 由宿主机 Caddy 导入，应用端口仅监听本机回环。
-tools.lfdou.ccwu.cc {
+tools.lfdou.ccwu.cc, tools.doufei.eu.org {
     encode zstd gzip
     header {
         Strict-Transport-Security "max-age=31536000"
@@ -10,7 +10,7 @@ tools.lfdou.ccwu.cc {
     reverse_proxy 127.0.0.1:18101
 }
 
-pdf.lfdou.ccwu.cc {
+pdf.lfdou.ccwu.cc, pdf.doufei.eu.org {
     encode zstd gzip
     header {
         Strict-Transport-Security "max-age=31536000"
@@ -21,7 +21,7 @@ pdf.lfdou.ccwu.cc {
     reverse_proxy 127.0.0.1:18102
 }
 
-tr.lfdou.ccwu.cc {
+tr.lfdou.ccwu.cc, tr.doufei.eu.org {
     encode zstd gzip
     header {
         Strict-Transport-Security "max-age=31536000"

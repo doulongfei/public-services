@@ -12,7 +12,10 @@
       "memory_limit_bytes": 268435456,
       "cpu_limit": 0.35,
       "https_status": 200,
-      "http_redirect_status": 308
+      "http_redirect_status": 308,
+      "aliases": [
+        "https://tools.doufei.eu.org/"
+      ]
     },
     "bentopdf": {
       "url": "https://pdf.lfdou.ccwu.cc/",
@@ -24,7 +27,10 @@
       "memory_limit_bytes": 268435456,
       "cpu_limit": 0.5,
       "https_status": 200,
-      "http_redirect_status": 308
+      "http_redirect_status": 308,
+      "aliases": [
+        "https://pdf.doufei.eu.org/"
+      ]
     },
     "libretranslate": {
       "url": "https://tr.lfdou.ccwu.cc/",
@@ -36,7 +42,10 @@
       "memory_limit_bytes": 4294967296,
       "cpu_limit": 1.25,
       "https_status": 200,
-      "http_redirect_status": 308
+      "http_redirect_status": 308,
+      "aliases": [
+        "https://tr.doufei.eu.org/"
+      ]
     }
   },
   "verification": {
@@ -49,7 +58,9 @@
     "bentopdf_merge_two_pages_content_and_order": "passed",
     "libretranslate_frontend_and_both_directions": "passed",
     "libretranslate_character_batch_body_rate_limits_and_spoofed_forwarded_header": "passed",
-    "existing_network_services_and_quota": "passed"
+    "existing_network_services_and_quota": "passed",
+    "doufei_alias_mac_ipv4_ipv6_https": "passed"
   },
-  "scope_note": "Representative functional checks only; not an exhaustive test of every upstream tool."
+  "scope_note": "Representative functional checks only; not an exhaustive test of every upstream tool.",
+  "domains_updated_at": "2026-10-22T04:29:46.412195+00:00"
 }

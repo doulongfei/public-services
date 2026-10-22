@@ -2,11 +2,13 @@
 
 在 OCI Ampere A1 上部署的免费公开工具。使用各项目的开源版本，保留作者署名、许可证和对应源码。
 
-| 服务 | 实际访问地址 | 源码 |
-| --- | --- | --- |
-| IT-Tools | https://tools.lfdou.ccwu.cc/ | https://github.com/doulongfei/it-tools |
-| BentoPDF | https://pdf.lfdou.ccwu.cc/ | https://github.com/doulongfei/bentopdf |
-| LibreTranslate | https://tr.lfdou.ccwu.cc/ | https://github.com/doulongfei/LibreTranslate |
+| 服务 | 实际访问地址 | doufei.eu.org 入口 | 源码 |
+| --- | --- | --- | --- |
+| IT-Tools | https://tools.lfdou.ccwu.cc/ | https://tools.doufei.eu.org/ | https://github.com/doulongfei/it-tools |
+| BentoPDF | https://pdf.lfdou.ccwu.cc/ | https://pdf.doufei.eu.org/ | https://github.com/doulongfei/bentopdf |
+| LibreTranslate | https://tr.lfdou.ccwu.cc/ | https://tr.doufei.eu.org/ | https://github.com/doulongfei/LibreTranslate |
+
+两组域名直接提供相同服务，复用同一组容器、数据与限流计数。应用的 canonical 继续使用 lfdou.ccwu.cc 地址；博客的“工具”菜单使用便于记忆的 doufei.eu.org 入口。两组域名均配置 IPv4、IPv6 和 HTTPS。
 
 IT-Tools 大多在浏览器计算；BentoPDF 的文件处理在浏览器本地完成；LibreTranslate 在服务器完成中英翻译。公开部署需要真实访问才能产生业务负载，不能保证避免免费实例闲置回收。
 
