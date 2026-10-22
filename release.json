@@ -45,7 +45,11 @@
       "http_redirect_status": 308,
       "aliases": [
         "https://tr.doufei.eu.org/"
-      ]
+      ],
+      "frontend_defaults": {
+        "source": "auto",
+        "target": "en"
+      }
     }
   },
   "verification": {
@@ -59,8 +63,11 @@
     "libretranslate_frontend_and_both_directions": "passed",
     "libretranslate_character_batch_body_rate_limits_and_spoofed_forwarded_header": "passed",
     "existing_network_services_and_quota": "passed",
-    "doufei_alias_mac_ipv4_ipv6_https": "passed"
+    "doufei_alias_mac_ipv4_ipv6_https": "passed",
+    "libretranslate_default_chinese_to_english_and_valid_target": "passed",
+    "libretranslate_legacy_query_and_domain_alias": "passed"
   },
   "scope_note": "Representative functional checks only; not an exhaustive test of every upstream tool.",
-  "domains_updated_at": "2026-10-22T04:29:46.412195+00:00"
+  "domains_updated_at": "2026-10-22T04:29:46.412195+00:00",
+  "frontend_defaults_updated_at": "2026-10-22T06:05:53.409995+00:00"
 }
