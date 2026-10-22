@@ -65,15 +65,30 @@ ai.doufei.eu.org {
 
 game.doufei.eu.org {
     encode zstd gzip
-    root * /srv/game-agent/public/current/game
     header {
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options nosniff
         Referrer-Policy no-referrer
         Cache-Control no-cache
-        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'self'"
     }
-    file_server
+    handle /releases/* {
+        @asset path_regexp game_asset ^/releases/[0-9]{5}-[a-f0-9]{12}(-v2)?/game/([a-z0-9][a-z0-9_.-]{0,48}\.(js|css|html|json))?$
+        handle @asset {
+            root * /srv/game-agent/public
+            header Cache-Control "public, max-age=604800, immutable"
+            file_server
+        }
+        respond 404
+    }
+    @entry path / /index.html
+    handle @entry {
+        root * /srv/game-agent/public/current/game
+        file_server
+    }
+    handle {
+        respond 404
+    }
 }
 
 lab.doufei.eu.org {
@@ -93,11 +108,11 @@ lab.doufei.eu.org {
         reverse_proxy 127.0.0.1:18106
     }
     handle /desktop.png {
-        root * /srv/game-agent/public
+        root * /srv/game-agent/public/current
         file_server
     }
     handle /mobile.png {
-        root * /srv/game-agent/public
+        root * /srv/game-agent/public/current
         file_server
     }
     handle {

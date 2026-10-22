@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """受信任的发布控制器：模型只能写候选源码，测试成功才原子发布。"""
-import datetime
 import hashlib
 import json
 import os
@@ -11,6 +10,23 @@ import signal
 import subprocess
 import threading
 import time
+
+import release
+from acceptance import proposal
+
+atomic = release.atomic
+
+
+class Cancelled(RuntimeError):
+    pass
+
+
+class InfrastructureFailure(RuntimeError):
+    pass
+
+
+class ModelIncomplete(RuntimeError):
+    pass
 
 BASE = Path(os.environ.get('STARHARBOR_ROOT', '/srv/game-agent'))
 APP = Path(os.environ.get('STARHARBOR_APP', '/opt/starharbor-agent'))
@@ -37,14 +53,6 @@ TOPICS = [
 ]
 
 
-def atomic(path, data, mode=0o644):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + '.new')
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
-    tmp.chmod(mode)
-    tmp.replace(path)
-
-
 def load(path, default=None):
     try:
         return json.loads(path.read_text())
@@ -61,7 +69,7 @@ def controls():
 
 
 def permitted(cfg):
-    return not HALT and time.time() < cfg['deadline'] and controls()['mode'] == 'running'
+    return controls()['mode'] == 'running' and not HALT and time.time() < cfg['deadline']
 
 
 def clean_container():
@@ -73,8 +81,10 @@ def validate_tree(candidate, secrets):
     for file in candidate.rglob('*'):
         if file.is_symlink():
             raise ValueError('Symlinks are not permitted')
-        if not file.is_file():
+        if file.is_dir():
             continue
+        if not file.is_file():
+            raise ValueError('Only regular files are permitted')
         rel = file.relative_to(candidate).as_posix()
         if rel != 'NOTES.md' and not re.fullmatch(r'game/[a-z0-9][a-z0-9_.-]{0,48}\.(js|css|html|json)', rel):
             raise ValueError('Unsupported artifact path: ' + rel)
@@ -89,7 +99,7 @@ def validate_tree(candidate, secrets):
             urls = re.findall(r'https?://[^\s\"\'<>`]+', text)
             if any(url.rstrip('/') != 'https://lab.doufei.eu.org' for url in urls):
                 raise ValueError('Game must remain offline and use only local assets')
-            if re.search(r'<\s*(iframe|object|embed|form)\b|serviceWorker|\beval\s*\(|\bnew\s+Function\s*\(', text, re.I):
+            if re.search(r'<\s*(base|iframe|object|embed|form)\b|serviceWorker|\beval\s*\(|\bnew\s+Function\s*\(', text, re.I):
                 raise ValueError('Unsupported active-content construct')
     for required in ['index.html', 'main.js', 'core.js', 'render.js', 'style.css']:
         if not (candidate / 'game' / required).is_file():
@@ -107,33 +117,16 @@ def owner_tree(root):
         p.chmod(0o755 if p.is_dir() else 0o644)
 
 
-def publish(candidate, version, outputs):
-    release = BASE / 'public/releases' / version
-    shutil.copytree(candidate / 'game', release / 'game')
-    for p in [release, *release.rglob('*')]:
-        p.chmod(0o755 if p.is_dir() else 0o644)
-    link = BASE / 'public/current.new'
-    link.unlink(missing_ok=True)
-    link.symlink_to(Path('releases') / version, target_is_directory=True)
-    link.replace(BASE / 'public/current')
-    for name in ['desktop.png', 'mobile.png']:
-        source = outputs / name
-        if source.exists():
-            tmp = BASE / 'public' / (name + '.new')
-            shutil.copyfile(source, tmp)
-            tmp.chmod(0o644)
-            tmp.replace(BASE / 'public' / name)
-    for stale in sorted((BASE / 'public/releases').iterdir(), key=lambda p: p.stat().st_mtime)[:-25]:
-        if stale != release:
-            shutil.rmtree(stale)
-
-
 def save(state):
     state['updated_at'] = time.time()
     atomic(BASE / 'public/state.json', state)
 
 
 def public_failure(failure):
+    if 'No new acceptance check' in failure:
+        return '本轮没有证明相对已发布版本的有效改进，未发布。'
+    if 'Model did not finish' in failure or 'agent_end' in failure or 'budget' in failure:
+        return '模型轮次未正常完成，保留候选并退避重试。'
     if 'Credential store read failed' in failure:
         return '模型客户端缓存初始化失败，试玩版本保持上一版。'
     if 'No game source changes' in failure:
@@ -195,7 +188,9 @@ def run_agent(cfg, candidate, prompt, logfile, state):
                 if not permitted(cfg) or time.time() >= end or logfile.stat().st_size > 12*1024*1024:
                     clean_container()
                     proc.wait(timeout=20)
-                    raise RuntimeError('Round interrupted by control, deadline or resource budget')
+                    if not permitted(cfg):
+                        raise Cancelled('Round interrupted by owner control or deadline')
+                    raise ModelIncomplete('Round exceeded time or log budget')
                 state['heartbeat_at'] = time.time()
                 save(state)
                 time.sleep(5)
@@ -206,43 +201,58 @@ def run_agent(cfg, candidate, prompt, logfile, state):
             reader.join(timeout=10)
             if reader.is_alive():
                 raise RuntimeError('Worker output stream did not close')
-    summary = ''
-    usage = 0
-    turns = 0
-    tools = 0
+    if proc.returncode:
+        raise InfrastructureFailure('Pi exited with code ' + str(proc.returncode) + ': ' + logfile.read_text(errors='replace')[-1200:])
+    return parse_agent_log(logfile)
+
+
+def parse_agent_log(logfile):
+    messages = []; tools = 0; successful_writes = 0; ended = False
     for line in logfile.read_text(errors='replace').splitlines():
         try:
             entry = json.loads(line)
         except ValueError:
             continue
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('type') == 'agent_end':
+            ended = True
         if entry.get('type') == 'tool_execution_end':
             tools += 1
+            if entry.get('toolName') in ('edit', 'write') and entry.get('isError') is False:
+                successful_writes += 1
         if entry.get('type') == 'message_end' and entry.get('message', {}).get('role') == 'assistant':
-            turns += 1
-            message = entry['message']
-            usage += message.get('usage', {}).get('totalTokens', 0)
-            for item in message.get('content', []):
-                if item.get('type') == 'text':
-                    summary = item.get('text', '')[-350:]
-    if proc.returncode:
-        raise RuntimeError('Pi exited with code ' + str(proc.returncode) + ': ' + logfile.read_text(errors='replace')[-1200:])
-    if not turns or not tools:
-        raise RuntimeError('Pi did not complete a model/tool turn')
-    return summary, usage, tools
+            messages.append(entry['message'])
+    if not ended or not messages:
+        raise ModelIncomplete('Pi did not emit agent_end and a final assistant message')
+    final = messages[-1]
+    if final.get('stopReason') != 'stop':
+        error = 'Model did not finish normally: ' + str(final.get('stopReason'))
+        if final.get('stopReason') == 'error':
+            raise InfrastructureFailure(error + ': ' + str(final.get('errorMessage', ''))[-1000:])
+        raise ModelIncomplete(error)
+    if not successful_writes:
+        raise ModelIncomplete('No successful source edit/write tool call')
+    summary = '\n'.join(item.get('text', '') for item in final.get('content', []) if item.get('type') == 'text')[-350:]
+    return summary, sum(m.get('usage', {}).get('totalTokens', 0) for m in messages), tools
 
 
-def validate_runtime(cfg, candidate, outputs, pause_overlay):
+def validate_runtime(cfg, candidate, baseline, outputs, suite):
     outputs.mkdir(parents=True, exist_ok=True)
     os.chown(outputs, 1000, 1000)
+    plan = outputs.parent / 'contracts.json'
+    atomic(plan, suite)
     args = ['docker', 'run', '--rm', '--init', '--name', TEST_NAME, '--network', 'none', '--user', '1000:1000', '--read-only',
             '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--cpus', '0.75',
             '--memory', '1g', '--memory-swap', '1g', '--pids-limit', '192',
             '--tmpfs', '/tmp:rw,size=256m,mode=1777', '--shm-size', '128m',
             '--mount', f'type=bind,src={candidate},dst=/workspace,readonly',
             '--mount', f'type=bind,src={APP / "tests"},dst=/harness,readonly',
+            '--mount', f'type=bind,src={baseline},dst=/baseline,readonly',
+            '--mount', f'type=bind,src={plan},dst=/run/contracts.json,readonly',
             '--mount', f'type=bind,src={outputs},dst=/output',
-            '-e', 'EXPECT_PAUSE_OVERLAY=' + str(int(pause_overlay)), cfg['runtime_image'],
-            'sh', '-c', 'for f in /workspace/game/*.js; do node --check "$f" || exit 1; done; node --test /harness/core.test.mjs && node /harness/browser.mjs']
+            cfg['runtime_image'],
+            'sh', '-c', 'for f in /workspace/game/*.js; do node --check "$f" || exit 1; done; node --test /harness/core.test.mjs && node /harness/features.mjs && node /harness/browser.mjs']
     logfile = outputs / 'tests.txt'
     with logfile.open('w') as output:
         result = subprocess.Popen(args, stdout=output, stderr=subprocess.STDOUT)
@@ -252,36 +262,93 @@ def validate_runtime(cfg, candidate, outputs, pause_overlay):
                 if not permitted(cfg) or time.time() >= end:
                     subprocess.run(['docker', 'rm', '-f', TEST_NAME], capture_output=True, timeout=20)
                     result.wait(timeout=20)
-                    raise RuntimeError('Tests interrupted by owner control or time budget')
+                    if not permitted(cfg):
+                        raise Cancelled('Tests interrupted by owner control or deadline')
+                    raise InfrastructureFailure('Test container exceeded time budget')
                 time.sleep(2)
         finally:
             if result.poll() is None:
                 subprocess.run(['docker', 'rm', '-f', TEST_NAME], capture_output=True, timeout=20)
                 result.wait(timeout=20)
+    if result.returncode in (125, 126, 127, 137, 143):
+        raise InfrastructureFailure('Test container failed: ' + logfile.read_text()[-2000:])
     if result.returncode:
-        raise RuntimeError(logfile.read_text()[-3500:])
+        raise ValueError(logfile.read_text()[-3500:])
 
 
-def commit(candidate, number, task):
-    repo = BASE / 'history'
-    shutil.rmtree(repo / 'game', ignore_errors=True)
-    shutil.copytree(candidate / 'game', repo / 'game')
-    if (candidate / 'NOTES.md').exists():
-        shutil.copyfile(candidate / 'NOTES.md', repo / 'NOTES.md')
-    command(['git', '-C', str(repo), 'add', '--', 'game', 'NOTES.md'])
-    command(['git', '-C', str(repo), 'commit', '-m', f'round {number}: {task}'])
-    return command(['git', '-C', str(repo), 'rev-parse', '--short=12', 'HEAD']).strip()
+def checkpoint(data):
+    atomic(BASE / 'checkpoint.json', data, 0o600)
+
+
+def baseline(version):
+    path = BASE / 'baselines' / version
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + '.new')
+        shutil.rmtree(temporary, ignore_errors=True)
+        release.export_source(BASE, version, temporary)
+        temporary.rename(path)
+    return path
+
+
+def new_checkpoint(state, number):
+    version = release.git(BASE, 'rev-parse', state['last_release']).strip()
+    return {'base_version': version, 'cursor': state.get('topic_index', 0),
+            'task': TOPICS[state.get('topic_index', 0)][0] if state.get('topic_index', 0) < len(TOPICS) else 'self-review',
+            'code_failures': 0, 'infra_failures': 0, 'stage': 'generating'}
+
+
+def candidate_path(cp):
+    rel = cp.get('candidate')
+    if not rel:
+        return None
+    if not re.fullmatch(r'rounds/[0-9]{5}/candidate', rel):
+        raise ValueError('Invalid candidate checkpoint')
+    path = BASE / rel
+    if path.is_symlink() or (path.exists() and not path.resolve().is_relative_to((BASE / 'rounds').resolve())):
+        raise ValueError('Invalid candidate checkpoint path')
+    return path
+
+
+def make_prompt(cp, candidate):
+    cursor = cp['cursor']
+    detail = TOPICS[cursor % len(TOPICS)][1]
+    if cursor >= len(TOPICS):
+        detail = 'Choose one real missing feature or defect from the source and feedback. Optional review lens: ' + detail
+    text = f'''Task ID: {cp['task']}. {detail}
+Use read on file paths, not directories. Implement one small observable improvement and update NOTES.md.
+Also WRITE game/acceptance.json: {{"task":"{cp['task']}","checks":[...]}} with 1–4 declarative checks.
+A core check example: {{"kind":"core","initial":{{"score":100}},"steps":1,"path":"level","op":"gt","value":1}}.
+Core starts playing, merges initial, steps 1/60 seconds (steps 1–4000, optional input). Paths can inspect arrays via .length.
+A UI check example: {{"kind":"ui","selector":"#best-score","phase":"playing","property":"text","op":"contains","value":"最高"}}.
+UI selector must be a single #id; phase ready/playing/paused; property text/visible; op eq/gt/gte/lt/lte/contains/exists.
+For a visual-only improvement use {{"kind":"visual","selector":"#arena"}}. Comments, unused files and notes are not an improvement.
+All checks must pass in this candidate and at least one MUST fail on the last published source. Previously accepted checks remain mandatory.
+Feature contracts: enemy-types uses enemies[].kind with two different speeds/sizes; health-pickup uses pickups[] {{kind:'health',x,y,r,life}}; weapon-upgrade uses level; wave-feedback uses waveNotice {{text,life}} and #wave-notice; hit-feedback uses damageFlash seconds; boss uses enemies[].isBoss and telegraph seconds at time>=120; shield uses shield {{active,cooldown}}, input.shield and button aria-label 启动护盾. Best score keeps sh_best localStorage and #best, accepts invalid/unavailable storage safely.
+Current notes:\n{(candidate / 'NOTES.md').read_text()[-1800:]}
+Owner feedback (higher priority within fixed contracts):\n{controls().get('feedback', '')[-1500:]}
+'''
+    if cp.get('error'):
+        text += '\nPrevious attempt was incomplete or failed. Fix this first, preserve existing changes, and finish normally:\n' + cp['error'][-2400:]
+    return text
+
+
+def delay(failures):
+    return min(3600, 120 * 2**min(failures, 5))
+
+
+def event(state, entry):
+    state['history'] = (state['history'] + [entry])[-60:]
 
 
 def main():
     cfg = load(BASE / 'config.json')
     secrets = [Path(cfg['model_key']).read_text().strip(), (BASE / 'control/api-key').read_text().strip()]
-    state = load(BASE / 'public/state.json', {'round': 0, 'accepted': 0, 'rejected': 0, 'history': [], 'tokens': 0})
-    state.update({'started_at': cfg['started_at'], 'deadline': cfg['deadline'], 'model': 'qwen3.6-35b-a3b-q3_k_m', 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns': 8}})
+    state = release.recover(BASE) or load(BASE / 'public/state.json', {'round': 0, 'accepted': 0, 'rejected': 0, 'history': [], 'tokens': 0})
+    state.update({'started_at': cfg['started_at'], 'deadline': cfg['deadline'], 'model': 'qwen3.6-35b-a3b-q3_k_m',
+                  'workflow_version': 2, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns': 8}})
+    cp = load(BASE / 'checkpoint.json', {})
     clean_container()
-    failure = ''
-    candidate = None
-    failures = 0
     try:
         while not HALT and time.time() < cfg['deadline']:
             mode = controls()['mode']
@@ -291,72 +358,105 @@ def main():
                 state['phase'] = 'paused'; save(state); time.sleep(5); continue
             if shutil.disk_usage(BASE).free < 12*1024**3:
                 state['phase'] = 'waiting-disk'; save(state); wait(cfg, 300); continue
+            retry_at = max(state.get('retry_at', 0), cp.get('retry_at', 0))
+            if retry_at > time.time():
+                state['phase'] = 'cooldown'; save(state); wait(cfg, retry_at-time.time()); continue
             state['round'] += 1
             number = state['round']
-            cursor = state.get('topic_index', 0)
-            topic_index = cursor % len(TOPICS)
-            task, detail = TOPICS[topic_index]
-            if cursor >= len(TOPICS):
-                detail = ('Choose the highest-value next improvement yourself from current source, NOTES.md and owner feedback. '
-                          'Do not add an already implemented feature again. Optional review lens: ' + detail)
-                task = 'self-review'
             round_dir = BASE / 'rounds' / f'{number:05d}'
             round_dir.mkdir(parents=True, exist_ok=True)
-            if not failure or candidate is None or not candidate.exists():
-                candidate = round_dir / 'candidate'
-                shutil.copytree(BASE / 'history/game', candidate / 'game')
-                shutil.copyfile(BASE / 'history/NOTES.md', candidate / 'NOTES.md')
-                owner_tree(candidate)
-            state.update({'phase': 'generating', 'current_task': task, 'round_started_at': time.time()})
+            cp = cp if cp.get('task') else new_checkpoint(state, number)
+            task = cp['task']
+            state.update({'current_task': task, 'round_started_at': time.time(), 'phase': 'generating'})
             save(state)
             print(f'Round {number} started: {task}', flush=True)
-            notes = (candidate / 'NOTES.md').read_text()[-1800:]
-            files = ', '.join(str(p.relative_to(candidate)) for p in sorted((candidate / 'game').glob('*')) if p.is_file())
-            prompt = f'Round {number}. Task: {detail}\nAvailable files under /workspace: {files}, NOTES.md. Use read on a file path, not a directory.\nImprove one small unfinished part, do not repeat existing changes. Write the next useful step briefly into NOTES.md.\nCurrent notes:\n{notes}\nOwner feedback (higher priority unless incompatible with fixed contracts):\n{controls().get("feedback", "")[-1500:]}\n'
-            if failure:
-                prompt += 'The previous candidate failed trusted tests; first fix this error and preserve the intended feature:\n' + failure[-2500:]
-            if task == 'pause-overlay':
-                prompt += '\nThis is a single-file task: read ONLY game/main.js (plus NOTES.md if needed), then edit it. Do NOT read style.css/index.html/core.js/render.js; phase values are ready/playing/paused/over and .viewport already exists. Use DOM style properties for the self-contained overlay. Implement now rather than surveying the project.\n'
-            before = fingerprint(BASE / 'history')
             try:
-                summary, tokens, tools = run_agent(cfg, candidate, prompt, round_dir / 'pi.jsonl', state)
-                state['tokens'] += tokens
+                source = baseline(cp['base_version'])
+                candidate = candidate_path(cp)
+                if candidate is None or not candidate.exists():
+                    candidate = round_dir / 'candidate'
+                    shutil.copytree(source, candidate)
+                    owner_tree(candidate)
+                    cp['candidate'] = str(candidate.relative_to(BASE))
+                    cp['stage'] = 'generating'
+                checkpoint(cp)
+                if cp.get('stage') != 'generated':
+                    summary, tokens, tools = run_agent(cfg, candidate, make_prompt(cp, candidate), round_dir / 'pi.jsonl', state)
+                    state['tokens'] += tokens
+                    cp.update({'summary': summary, 'tools': tools, 'stage': 'generated'})
+                    checkpoint(cp); save(state)
                 validate_tree(candidate, secrets)
-                if fingerprint(candidate) == before:
-                    raise RuntimeError('No game source changes; notes-only edits are not a release')
+                if fingerprint(candidate) == fingerprint(source):
+                    raise ValueError('No game source changes; notes-only edits are not a release')
+                checks = proposal(candidate, task)
+                approved = load(BASE / 'contracts.json', {'checks': [], 'features': []})
+                features = sorted(set(approved['features'] + [task]))
+                suite = {'checks': approved['checks'] + checks, 'new_checks': checks, 'features': features}
+                if len(suite['checks']) > 4096:
+                    raise ValueError('Acceptance budget reached; owner review required')
                 if not permitted(cfg):
-                    raise RuntimeError('Publication cancelled by control or deadline')
+                    raise Cancelled('Publication cancelled by control or deadline')
                 state['phase'] = 'testing'; save(state)
-                pause_overlay = task == 'pause-overlay' or state.get('pause_overlay', False)
-                validate_runtime(cfg, candidate, round_dir / 'output', pause_overlay)
+                validate_runtime(cfg, candidate, source, round_dir / 'output', suite)
                 if not permitted(cfg):
-                    raise RuntimeError('Publication cancelled by control or deadline')
+                    raise Cancelled('Publication cancelled by control or deadline')
+                summary = cp['summary']
                 if any(secret in summary for secret in secrets):
                     summary = 'Changed game source; private content omitted.'
-                version = commit(candidate, number, task)
-                publish(candidate, f'{number:05d}-{version}', round_dir / 'output')
-                state.update({'accepted': state['accepted']+1, 'last_release': version, 'pause_overlay': pause_overlay, 'topic_index': cursor+1})
-                event = {'round': number, 'task': task, 'result': 'accepted', 'version': version, 'summary': summary[:350], 'tool_calls': tools, 'at': time.time()}
-                failure = ''; failures = 0
+                version = release.prepare_commit(BASE, candidate, cp['base_version'], number, task)
+                release_id = f'{number:05d}-{version[:12]}'
+                next_state = json.loads(json.dumps(state))
+                next_state.update({'accepted': state['accepted']+1, 'last_release': version[:12], 'release_id': release_id,
+                                   'pause_overlay': 'pause-overlay' in features, 'accepted_features': features,
+                                   'topic_index': cp['cursor']+1, 'phase': 'cooldown', 'failure_count': 0,
+                                   'retry_at': time.time()+cfg['cooldown'], 'updated_at': time.time()})
+                event(next_state, {'round': number, 'task': task, 'result': 'accepted', 'version': version[:12],
+                                   'summary': summary[:350], 'tool_calls': cp['tools'], 'at': time.time()})
+                release.stage(BASE, candidate, release_id, version, next_state,
+                              {'checks': suite['checks'], 'features': features}, round_dir / 'output')
+                state = release.activate(BASE, release_id, lambda: permitted(cfg))
+                cp = {}
+                print(f'Round {number} accepted; version={version[:12]}', flush=True)
             except Exception as error:
+                # 指针切换后的异常属于待恢复成功事务，不得再次计为拒绝。
+                if (BASE / 'pending.json').exists():
+                    state = release.recover(BASE)
+                    if state.get('round') == number and any(e.get('round') == number and e.get('result') == 'accepted' for e in state['history']):
+                        cp = {}; continue
                 failure = str(error)
                 for secret in secrets:
                     failure = failure.replace(secret, '[redacted]')
                 (round_dir / 'failure.txt').write_text(failure)
-                failures += 1
-                state['rejected'] += 1
-                event = {'round': number, 'task': task, 'result': 'rejected', 'summary': public_failure(failure), 'at': time.time()}
-                if failures % 3 == 0:
-                    failure = ''; candidate = None
-                    state['topic_index'] = cursor+1
-            state['history'] = (state['history'] + [event])[-60:]
-            state['phase'] = 'cooldown'; save(state)
-            print(f'Round {number} {event["result"]}; accepted={state["accepted"]}, rejected={state["rejected"]}', flush=True)
-            protected = candidate.parent if candidate is not None else None
-            for old in sorted((BASE / 'rounds').iterdir())[:-30]:
-                if old != protected:
-                    shutil.rmtree(old)
-            wait(cfg, cfg['cooldown'] if not failure else min(3600, 120*2**min(failures, 5)))
+                cp['error'] = failure[-4000:]
+                if isinstance(error, (Cancelled, InterruptedError)):
+                    result = 'interrupted'
+                    state['cancelled'] = state.get('cancelled', 0)+1
+                    cp['retry_at'] = 0
+                else:
+                    infra = isinstance(error, (InfrastructureFailure, ModelIncomplete, OSError, subprocess.SubprocessError))
+                    counter = 'infra_failures' if infra else 'code_failures'
+                    cp[counter] += 1
+                    cp['retry_at'] = time.time()+delay(cp[counter])
+                    state['retry_at'] = cp['retry_at']
+                    state['rejected'] += 1
+                    state['failure_count'] = cp[counter]
+                    result = 'retrying' if infra else 'rejected'
+                    if not infra:
+                        cp['stage'] = 'generating'
+                        if cp['code_failures'] % 3 == 0:
+                            # 保留失败目录供分析；回到已发布源码修复同一任务，不跳过目标。
+                            cp.pop('candidate', None)
+                    elif isinstance(error, ModelIncomplete):
+                        cp['stage'] = 'generating'
+                checkpoint(cp)
+                event(state, {'round': number, 'task': task, 'result': result,
+                              'summary': public_failure(failure), 'at': time.time()})
+                state['phase'] = 'cooldown'; save(state)
+                print(f'Round {number} {result}: {type(error).__name__}', flush=True)
+            try:
+                release.prune(BASE, candidate_path(cp))
+            except OSError as error:
+                print(f'Nonfatal cleanup error: {error}', flush=True)
         state['phase'] = 'stopped' if controls()['mode'] == 'stopped' else ('interrupted' if HALT else 'completed')
         save(state)
     finally:

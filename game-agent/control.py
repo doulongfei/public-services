@@ -7,6 +7,8 @@ from pathlib import Path
 import threading
 import time
 
+from release import atomic, decision_lock
+
 BASE = Path('/srv/game-agent')
 LOCK = threading.Lock()
 
@@ -63,21 +65,18 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Feedback must contain 1–2000 characters')
         except (ValueError, UnicodeError):
             return self.response(400, {'error': '参数无效'})
-        with LOCK:
+        with LOCK, decision_lock(BASE):
             config = json.loads((BASE / 'config.json').read_text())
             state_path = BASE / 'control/commands.json'
             state = json.loads(state_path.read_text())
-            if data['action'] == 'resume' and (state['mode'] == 'stopped' or time.time() >= config['deadline']):
+            if data['action'] in ('pause', 'resume') and (state['mode'] == 'stopped' or time.time() >= config['deadline']):
                 return self.response(409, {'error': '任务已结束，需要另行安排新的运行周期'})
             if data['action'] == 'feedback':
                 state['feedback'] = data['text'].strip()
             else:
                 state['mode'] = {'pause': 'paused', 'resume': 'running', 'stop': 'stopped'}[data['action']]
             state['updated_at'] = time.time()
-            tmp = state_path.with_name('commands.json.control-new')
-            tmp.write_text(json.dumps(state, ensure_ascii=False))
-            tmp.chmod(0o600)
-            tmp.replace(state_path)
+            atomic(state_path, state, 0o600)
         self.response(200, {'ok': True, 'mode': state['mode'], 'feedback_saved': data['action'] == 'feedback'})
 
 

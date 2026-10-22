@@ -9,11 +9,15 @@ async function refresh(){
   $('phase').textContent=phases[s.phase]||s.phase;$('round').textContent=s.round??0;$('counts').textContent=`${s.accepted??0} / ${s.rejected??0}`;
   const seconds=Math.max(0,(s.deadline??Date.now()/1000)-Date.now()/1000);$('remaining').textContent=`${Math.floor(seconds/86400)}天 ${Math.floor(seconds/3600)%24}时 ${Math.floor(seconds/60)%60}分`;
   $('task').textContent=`当前任务：${tasks[s.current_task]||'首个版本准备中'} · 最新版本：${s.last_release||'基线'}${s.phase==='generating'&&s.round_started_at?' · 本轮已运行 '+Math.floor((Date.now()/1000-s.round_started_at)/60)+' 分钟':''}`;
+  const terminal=['stopped','completed'].includes(s.phase);
+  for(const action of ['pause','resume','stop'])$(action).disabled=terminal;
+  if(s.phase==='cooldown'&&s.retry_at>Date.now()/1000)$('task').textContent+=' · '+Math.ceil((s.retry_at-Date.now()/1000)/60)+' 分钟后继续';
+  if(s.accepted_features?.length)$('task').textContent+=' · 已验收 '+s.accepted_features.length+' 项功能';
   $('dates').textContent=s.started_at?`${date(s.started_at)} 开始 / ${date(s.deadline)} 自动结束（北京时间）`:'';
   if(s.last_release&&s.last_release!==lastVersion){lastVersion=s.last_release;$('preview').src='/desktop.png?v='+encodeURIComponent(lastVersion);}
   $('history').replaceChildren(...[...(s.history||[])].reverse().map(item=>{
    const li=document.createElement('li'),tag=document.createElement('span'),body=document.createElement('div'),title=document.createElement('strong'),summary=document.createElement('p'),meta=document.createElement('small');
-   tag.className='tag '+(item.result==='rejected'?'rejected':'');tag.textContent=`#${item.round} ${item.result==='accepted'?'已发布':'未通过'}`;title.textContent=tasks[item.task]||'自主改进';summary.textContent=item.summary||'已完成固定测试';meta.textContent=date(item.at)+(item.version?' · '+item.version:'');body.append(title,summary,meta);li.append(tag,body);return li;
+   tag.className='tag '+(item.result==='accepted'?'':'rejected');tag.textContent=`#${item.round} ${{accepted:'已发布',rejected:'验证失败',retrying:'退避重试',interrupted:'已中断'}[item.result]||item.result}`;title.textContent=tasks[item.task]||'自主改进';summary.textContent=item.summary||'已完成固定测试';meta.textContent=date(item.at)+(item.version?' · '+item.version:'');body.append(title,summary,meta);li.append(tag,body);return li;
   }));
  }catch(error){$('phase').textContent='连接重试中';}
 }

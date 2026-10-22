@@ -1,4 +1,5 @@
 """运行器与控制 API 的边界检查，不调用云端模型。"""
+import sys
 import importlib.util
 from http.server import ThreadingHTTPServer
 import json
@@ -13,6 +14,7 @@ import urllib.request
 
 
 def module(name):
+    sys.path.insert(0, str(Path(__file__).parent.parent))
     spec = importlib.util.spec_from_file_location(name, Path(__file__).parent.parent / (name + '.py'))
     result = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(result)
@@ -81,6 +83,10 @@ class Boundaries(unittest.TestCase):
             self.assertEqual(send('stop')['mode'], 'stopped')
             with self.assertRaises(urllib.error.HTTPError) as stopped: send('resume')
             self.assertEqual(stopped.exception.code, 409)
+            with self.assertRaises(urllib.error.HTTPError) as stopped_pause: send('pause')
+            self.assertEqual(stopped_pause.exception.code, 409)
+            with self.assertRaises(urllib.error.HTTPError): send('resume')
+            self.assertEqual(json.loads((self.root / 'control/commands.json').read_text())['mode'], 'stopped')
         finally:
             server.shutdown(); server.server_close(); worker.join()
 

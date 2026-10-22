@@ -2,8 +2,8 @@
 Description=Starharbor seven-day local-model development agent
 After=docker.service network-online.target
 Requires=docker.service
-StartLimitIntervalSec=3600
-StartLimitBurst=10
+PartOf=docker.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

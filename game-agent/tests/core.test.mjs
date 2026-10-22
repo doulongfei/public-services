@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createState,step,WIDTH,HEIGHT} from '/workspace/game/core.js';
+const {createState,step,WIDTH,HEIGHT}=await import((process.env.GAME_ROOT||'/workspace/game')+'/core.js');
 
 test('ready and paused states do not advance simulation',()=>{
  const s=createState();step(s,.05,{x:1});assert.equal(s.time,0);
@@ -22,9 +22,15 @@ test('collision and game over remain valid',()=>{
  s.enemies=[{...s.player,hp:1,speed:0}];step(s,.01,{});
  assert.equal(s.phase,'over');assert.equal(s.hp,0);
 });
-test('long simulation has finite state and bounded entity counts',()=>{
- const s=createState();s.phase='playing';
- for(let i=0;i<12000;i++)step(s,1/60,{x:Math.sin(i/100),y:Math.cos(i/100)},()=>.3);
- assert.ok(Number.isFinite(s.time));assert.ok(s.hp>=0 && s.hp<=200);
- assert.ok(s.enemies.length<=150 && s.bullets.length<300 && s.particles.length<1500);
+test('long simulation covers active play with bounded entity counts',()=>{
+ let s=createState();s.phase='playing';let elapsed=0;
+ for(let i=0;i<12000;i++){
+  if(s.phase==='over'){s=createState();s.phase='playing';}
+  const before=s.time;step(s,1/60,{x:Math.sin(i/100),y:Math.cos(i/100)},()=>.3);elapsed+=s.time-before;
+  if(i%120===0){
+   assert.ok(Number.isFinite(s.time));assert.ok(s.hp>=0&&s.hp<=200);
+   assert.ok(s.enemies.length<=150&&s.bullets.length<300&&s.particles.length<1500);
+  }
+ }
+ assert.ok(elapsed>199,'Simulation must exercise 200 seconds of actual gameplay');
 });
