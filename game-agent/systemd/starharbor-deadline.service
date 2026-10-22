@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop Starharbor agent at its absolute deadline
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/starharbor-agent/deadline.py

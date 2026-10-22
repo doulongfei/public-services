@@ -12,6 +12,8 @@
 
 IT-Tools 大多在浏览器计算；BentoPDF 的文件处理在浏览器本地完成；LibreTranslate 在服务器完成中英翻译。公开部署需要真实访问才能产生业务负载，不能保证避免免费实例闲置回收。
 
+小游戏“星港守卫”已加入同一台 OCI：试玩 https://game.doufei.eu.org/ ，进度与所有者控制 https://lab.doufei.eu.org/ 。一周内由本地模型分轮改进，通过固定测试才自动发布；运行时间、目录、限制和运维见 [game-agent/README.md](game-agent/README.md)。
+
 ## Docker 选型
 
 服务器已运行 Docker 和 Sub-Store，因此复用现有 Docker Engine 与 Compose。每个应用保留独立容器、资源上限和源码版本，宿主机 Caddy 负责 HTTPS。直接安装 Node、Python、翻译模型及不同项目依赖，会增加宿主机的依赖耦合；本方案将这些依赖放在各自镜像中。
@@ -100,11 +102,12 @@ p.chmod(0o600)
 os.chown(p, 1000, 1000)
 PY
 docker compose --profile llm config --quiet
+docker network inspect starharbor-model >/dev/null 2>&1 || docker network create --internal starharbor-model
 docker compose --profile llm up -d --no-deps llama
 docker compose --profile llm ps llama
 ```
 
-服务以 UID/GID 1000 运行，只读挂载模型和密钥；端口 18104 只绑定回环地址。使用 2 核 CPU、18 GiB 内存、8192 token 上下文、单并发，默认关闭思考模式，默认最多输出 1024 token。显式请求较大输出仍受到上下文窗口约束。禁用权重重排，控制 ARM CPU 加载时的内存峰值；内存达到容器上限时可能终止模型进程，Docker 会按重启策略恢复。对外入口隐藏指标和管理路由；模型没有宿主机命令执行能力，工具由调用方客户端执行。
+服务以 UID/GID 1000 运行，只读挂载模型和密钥；端口 18104 只绑定回环地址。使用 2 核 CPU、18 GiB 内存、16384 token 上下文、单并发，默认关闭思考模式，默认最多输出 1024 token。显式请求较大输出仍受到上下文窗口约束。禁用权重重排，控制 ARM CPU 加载时的内存峰值；内存达到容器上限时可能终止模型进程，Docker 会按重启策略恢复。对外入口隐藏指标和管理路由；模型没有宿主机命令执行能力，工具由调用方客户端执行。
 
 API Key 在服务器 `data/llama/secrets/api-key` 中，不能提交到仓库；已加入现有异机加密备份的输入清单，并在本机保留权限为 0600 的副本。API 请求使用 `Authorization: Bearer <API_KEY>`。本机 Pi 可以添加以下 provider（密钥通过环境变量传入）：
 
@@ -119,8 +122,8 @@ API Key 在服务器 `data/llama/secrets/api-key` 中，不能提交到仓库；
         "id": "qwen3.6-35b-a3b-q3_k_m",
         "reasoning": false,
         "input": ["text"],
-        "contextWindow": 8192,
-        "maxTokens": 1024,
+        "contextWindow": 16384,
+        "maxTokens": 2048,
         "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
       }]
     }

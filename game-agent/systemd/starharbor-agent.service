@@ -1,0 +1,27 @@
+[Unit]
+Description=Starharbor seven-day local-model development agent
+After=docker.service network-online.target
+Requires=docker.service
+StartLimitIntervalSec=3600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/starharbor-agent/runner.py
+ExecStopPost=-/usr/bin/docker rm -f starharbor-round starharbor-test
+Restart=on-failure
+RestartSec=60
+TimeoutStopSec=45
+RuntimeMaxSec=7d30min
+UMask=0022
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/game-agent
+PrivateTmp=true
+MemoryMax=256M
+CPUQuota=20%
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

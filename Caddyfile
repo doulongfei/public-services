@@ -62,3 +62,46 @@ ai.doufei.eu.org {
         }
     }
 }
+
+game.doufei.eu.org {
+    encode zstd gzip
+    root * /srv/game-agent/public/current/game
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        Cache-Control no-cache
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'"
+    }
+    file_server
+}
+
+lab.doufei.eu.org {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy same-origin
+        Cache-Control no-cache
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'"
+    }
+    request_body {
+        max_size 8KB
+    }
+    handle /api/* {
+        reverse_proxy 127.0.0.1:18106
+    }
+    handle /desktop.png {
+        root * /srv/game-agent/public
+        file_server
+    }
+    handle /mobile.png {
+        root * /srv/game-agent/public
+        file_server
+    }
+    handle {
+        root * /opt/starharbor-agent/web
+        file_server
+    }
+}

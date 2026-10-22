@@ -1,0 +1,22 @@
+[Unit]
+Description=Starharbor owner controls
+After=network.target
+
+[Service]
+User=game-control
+Group=game-control
+ExecStart=/usr/bin/python3 /opt/starharbor-agent/control.py
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/game-agent/control
+PrivateTmp=true
+MemoryMax=96M
+CPUQuota=10%
+TasksMax=64
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

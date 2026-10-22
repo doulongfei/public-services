@@ -1,0 +1,10 @@
+{
+  "providers": {
+    "oci": {
+      "baseUrl": "http://llama:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "!cat /run/secrets/api-key",
+      "models": [{"id":"qwen3.6-35b-a3b-q3_k_m","reasoning":false,"input":["text"],"contextWindow":16384,"maxTokens":2048,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0}}]
+    }
+  }
+}

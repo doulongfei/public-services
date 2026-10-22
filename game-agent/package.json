@@ -1,0 +1,11 @@
+{
+  "name": "starharbor-agent-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.3.0",
+    "playwright": "1.64.0"
+  }
+}

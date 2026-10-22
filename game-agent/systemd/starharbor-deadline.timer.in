@@ -1,0 +1,11 @@
+[Unit]
+Description=Absolute seven-day deadline for Starharbor
+
+[Timer]
+OnCalendar=@DEADLINE@
+Persistent=true
+AccuracySec=1s
+Unit=starharbor-deadline.service
+
+[Install]
+WantedBy=timers.target

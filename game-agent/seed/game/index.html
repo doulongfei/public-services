@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>星港守卫 · STARHARBOR</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><a class="brand" href="/">✦ STARHARBOR <small>星港守卫</small></a><a href="https://lab.doufei.eu.org/" target="_blank" rel="noopener">迭代日志 ↗</a></header>
+<main>
+ <section class="intro"><p class="eyebrow">SECTOR 07 / LAST SIGNAL</p><h1>守住最后的<br><em>一束光。</em></h1><p>无人机正在接近星港。驾驶巡航艇穿越碎片，<br>自动锁定目标，尽可能久地守住航线。</p><div class="legend"><span><i class="friendly"></i> 你 / 巡航艇</span><span><i class="hostile"></i> 入侵无人机</span></div><p class="instructions">WASD / 方向键移动 · P 暂停<br>手机拖动战区移动 · 自动射击</p></section>
+ <section class="station" aria-label="游戏区域"><div class="hud"><div><span>存活时间</span><strong id="time">00:00</strong></div><div><span>击落</span><strong id="score">0</strong></div><div><span>船体</span><strong id="health">100</strong></div><button id="pause" type="button" aria-label="暂停游戏">Ⅱ</button></div>
+ <div class="viewport"><canvas id="arena" width="900" height="600" aria-label="星港守卫战区"></canvas><div id="overlay"><p class="eyebrow">SYSTEM READY</p><h2 id="result-title">星港等待你的信号</h2><p id="result-detail">移动躲避，武器会自动瞄准。</p><button id="start" type="button">开始游戏 →</button></div><div class="crosshair" aria-hidden="true">+</div></div>
+ <div class="statusline"><span><b>●</b> 航道已连接</span><span id="wave">第 1 波</span><span>本地运行 · 无需登录</span></div></section>
+</main><footer>一周创造实验 / 由 OCI 本地模型持续迭代 <span>HEADPHONES OPTIONAL · COURAGE REQUIRED</span></footer>
+<script type="module" src="main.js"></script></body></html>
