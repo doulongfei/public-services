@@ -1,0 +1,112 @@
+name: public-services
+
+x-common: &common
+  restart: unless-stopped
+  init: true
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: local
+    options:
+      max-size: 10m
+      max-file: '3'
+
+services:
+  it-tools:
+    <<: *common
+    image: lfdou/it-tools:${IT_TOOLS_REF:-local}
+    build:
+      context: ../source/it-tools
+      labels:
+        org.opencontainers.image.revision: ${IT_TOOLS_REF:-local}
+    ports:
+      - 127.0.0.1:18101:8080
+    cpus: '0.35'
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 96
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test: [CMD, wget, --spider, -q, http://127.0.0.1:8080/]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  bentopdf:
+    <<: *common
+    image: lfdou/bentopdf:${BENTOPDF_REF:-local}
+    build:
+      context: ../source/bentopdf
+      args:
+        SIMPLE_MODE: 'true'
+        DISABLE_GITHUB_STARS: 'true'
+        SITE_URL: https://pdf.lfdou.ccwu.cc
+        VITE_DEFAULT_LANGUAGE: zh
+      labels:
+        org.opencontainers.image.revision: ${BENTOPDF_REF:-local}
+    ports:
+      - 127.0.0.1:18102:8080
+    entrypoint: [nginx, -g, 'daemon off;']
+    cpus: '0.5'
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 96
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /etc/nginx/tmp:size=32m,uid=101,gid=101
+    healthcheck:
+      test: [CMD, wget, --spider, -q, http://127.0.0.1:8080/]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  libretranslate:
+    <<: *common
+    image: lfdou/libretranslate:${LIBRETRANSLATE_REF:-local}
+    build:
+      context: ../source/libretranslate
+      dockerfile: docker/Dockerfile
+      labels:
+        org.opencontainers.image.revision: ${LIBRETRANSLATE_REF:-local}
+    ports:
+      - 127.0.0.1:18103:5000
+    environment:
+      LT_HOST: 0.0.0.0
+      LT_LOAD_ONLY: en,zh
+      LT_UPDATE_MODELS: 'true'
+      LT_THREADS: '1'
+      LT_CHAR_LIMIT: '2000'
+      LT_BATCH_LIMIT: '1'
+      LT_REQ_LIMIT: '6'
+      LT_HOURLY_REQ_LIMIT: '60'
+      LT_DAILY_REQ_LIMIT: '200'
+      LT_REQ_TIME_COST: '5'
+      LT_TRUST_FORWARDED_FOR: 'true'
+      LT_DISABLE_FILES_TRANSLATION: 'true'
+      LT_FRONTEND_LANGUAGE: zh
+      LT_FRONTEND_LANGUAGE_SOURCE: auto
+      LT_FRONTEND_LANGUAGE_TARGET: zh
+      LT_FRONTEND_TITLE: LF 中英翻译
+      LT_FRONTEND_TIMEOUT: '120000'
+      LT_API_KEYS_DB_PATH: /app/db/api_keys.db
+      ARGOS_DEVICE_TYPE: cpu
+    volumes:
+      - ../data/libretranslate/models:/home/libretranslate/.local
+      - ../data/libretranslate/cache:/home/libretranslate/.cache
+      - ../data/libretranslate/db:/app/db
+    cpus: '1.25'
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 256
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    healthcheck:
+      test: [CMD, ./venv/bin/python, scripts/healthcheck.py]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 600s

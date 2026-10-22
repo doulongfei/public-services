@@ -1,0 +1,42 @@
+# 由宿主机 Caddy 导入，应用端口仅监听本机回环。
+tools.lfdou.ccwu.cc {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+    reverse_proxy 127.0.0.1:18101
+}
+
+pdf.lfdou.ccwu.cc {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+    reverse_proxy 127.0.0.1:18102
+}
+
+tr.lfdou.ccwu.cc {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+    request_body {
+        max_size 64KB
+    }
+    reverse_proxy 127.0.0.1:18103 {
+        # DNS 直连部署：覆盖客户端提供的转发头，限额按真实来源地址计算。
+        header_up X-Forwarded-For {remote_host}
+        transport http {
+            response_header_timeout 120s
+        }
+    }
+}

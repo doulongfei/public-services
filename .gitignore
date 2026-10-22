@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+*.log
+*.tar.gz
+*.aesgcm
+__pycache__/
