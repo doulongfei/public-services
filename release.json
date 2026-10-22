@@ -50,6 +50,51 @@
         "source": "auto",
         "target": "en"
       }
+    },
+    "llama": {
+      "url": "https://ai.doufei.eu.org/",
+      "api_base_url": "https://ai.doufei.eu.org/v1",
+      "source": "https://github.com/ggml-org/llama.cpp",
+      "runtime_version": "b11804",
+      "source_commit": "c7fc5094179bf8a9c73c18593db714f8da41a402",
+      "image": "ghcr.io/ggml-org/llama.cpp@sha256:8c74db29f1a2bef3f0a331b52c4d6214601dfceed4bee0b94cc48b3b23ff257d",
+      "image_id": "sha256:8c74db29f1a2bef3f0a331b52c4d6214601dfceed4bee0b94cc48b3b23ff257d",
+      "architecture": "arm64",
+      "model": {
+        "repository": "unsloth/Qwen3.6-35B-A3B-GGUF",
+        "revision": "a483e9e6cbd595906af30beda3187c2663a1118c",
+        "filename": "Qwen3.6-35B-A3B-UD-Q3_K_M.gguf",
+        "size_bytes": 16600710112,
+        "sha256": "1b715841683f960bd9a49f008181bd910ee169b78d4cf465b6fde7f4d929ff99",
+        "alias": "qwen3.6-35b-a3b-q3_k_m",
+        "license": "Apache-2.0"
+      },
+      "memory_limit_bytes": 19327352832,
+      "cpu_limit": 2,
+      "context_window": 8192,
+      "parallel_requests": 1,
+      "default_max_output_tokens": 1024,
+      "reasoning_default": false,
+      "input": [
+        "text"
+      ],
+      "https_status": 200,
+      "http_redirect_status": 308,
+      "authentication": "Bearer API key; private file mounted read-only",
+      "baseline_process_rss_bytes": 17115389952,
+      "baseline_generation_tokens_per_second": 4.073233005337215,
+      "baseline_prompt_tokens_per_second": 7.857487026489853,
+      "pi_minimal_agent_model_time_ms": 123931,
+      "pi_minimal_agent_tool_calls": [
+        "read",
+        "write",
+        "write"
+      ],
+      "pi_generated_code_assertions": 5,
+      "mac_ipv4_origin_tls": "passed",
+      "ipv6_origin_tls": "passed",
+      "external_ipv6_client": "not verified: Mac currently could not establish IPv6 connection",
+      "memory_accounting_note": "Process RSS includes mmap model pages; cgroup usage after container recreation can be much lower. Do not estimate total model memory from Docker stats alone."
     }
   },
   "verification": {
@@ -65,9 +110,20 @@
     "existing_network_services_and_quota": "passed",
     "doufei_alias_mac_ipv4_ipv6_https": "passed",
     "libretranslate_default_chinese_to_english_and_valid_target": "passed",
-    "libretranslate_legacy_query_and_domain_alias": "passed"
+    "libretranslate_legacy_query_and_domain_alias": "passed",
+    "llama_model_sha256": "passed",
+    "llama_chinese_and_sse": "passed",
+    "llama_api_key_authentication": "passed",
+    "llama_function_call_and_tool_result": "passed",
+    "llama_browser_authenticated_chat": "passed",
+    "llama_pi_read_write_and_generated_code": "passed",
+    "llama_management_routes_hidden": "passed",
+    "llama_body_limit_at_origin_caddy": "passed",
+    "llama_final_configuration_and_global_pi_provider": "passed",
+    "existing_services_after_llama": "passed"
   },
   "scope_note": "Representative functional checks only; not an exhaustive test of every upstream tool.",
   "domains_updated_at": "2026-10-22T04:29:46.412195+00:00",
-  "frontend_defaults_updated_at": "2026-10-22T06:05:53.409995+00:00"
+  "frontend_defaults_updated_at": "2026-10-22T06:05:53.409995+00:00",
+  "llama_deployed_at": "2026-10-22T06:58:18.414892+00:00"
 }

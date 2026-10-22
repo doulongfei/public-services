@@ -15,6 +15,67 @@ x-common: &common
       max-file: '3'
 
 services:
+  llama:
+    <<: *common
+    profiles: [llm]
+    image: ghcr.io/ggml-org/llama.cpp@sha256:8c74db29f1a2bef3f0a331b52c4d6214601dfceed4bee0b94cc48b3b23ff257d
+    user: '1000:1000'
+    ports:
+      - 127.0.0.1:18104:8080
+    volumes:
+      - ../data/llama/models:/models:ro
+      - ../data/llama/secrets/api-key:/run/secrets/llama-api-key:ro
+    command:
+      - --model
+      - /models/Qwen3.6-35B-A3B-UD-Q3_K_M.gguf
+      - --alias
+      - qwen3.6-35b-a3b-q3_k_m
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8080'
+      - --n-gpu-layers
+      - '0'
+      - --threads
+      - '2'
+      - --threads-batch
+      - '2'
+      - --ctx-size
+      - '8192'
+      - --parallel
+      - '1'
+      - --batch-size
+      - '256'
+      - --ubatch-size
+      - '128'
+      - --no-repack
+      - --jinja
+      - --reasoning
+      - 'off'
+      - --api-key-file
+      - /run/secrets/llama-api-key
+      - --metrics
+      - --no-slots
+      - --poll
+      - '0'
+      - --timeout
+      - '600'
+      - --n-predict
+      - '1024'
+    cpus: '2.0'
+    mem_limit: 18g
+    memswap_limit: 18g
+    pids_limit: 256
+    oom_score_adj: 500
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --max-time, '5', http://127.0.0.1:8080/health]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 600s
+
   it-tools:
     <<: *common
     image: lfdou/it-tools:${IT_TOOLS_REF:-local}

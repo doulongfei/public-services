@@ -40,3 +40,25 @@ tr.lfdou.ccwu.cc, tr.doufei.eu.org {
         }
     }
 }
+
+ai.doufei.eu.org {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+    request_body {
+        max_size 2MB
+    }
+    @internal path /metrics /slots /slots/* /lora-adapters /lora-adapters/* /tools /tools/*
+    respond @internal 404
+    reverse_proxy 127.0.0.1:18104 {
+        flush_interval -1
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 600s
+        }
+    }
+}

@@ -28,10 +28,14 @@ IT-Tools 大多在浏览器计算；BentoPDF 的文件处理在浏览器本地�
 │   └── libretranslate/     # doulongfei/LibreTranslate 的源码
 ├── stack/                  # 本部署仓库
 │   ├── compose.yaml
-│   ├── Caddyfile           # 仅包含三个公开站点，不含其他服务的凭据
+│   ├── Caddyfile           # 公开站点和模型入口，不含其他服务的凭据
 │   ├── .env               # 当前源码提交号，Git 忽略
 │   └── release.json        # 已发布版本清单
 └── data/
+    ├── llama/
+    │   ├── models/         # 固定版本的 GGUF 模型
+    │   ├── secrets/        # API Key，root 管理，Git 忽略
+    │   └── logs/           # 下载和诊断记录
     └── libretranslate/
         ├── models/         # 翻译模型，持久化，按需重新下载
         ├── cache/          # 模型和分词运行缓存
@@ -70,7 +74,63 @@ IT-Tools 与 BentoPDF 各限制 256 MiB 内存；翻译服务限制 4 GiB、1.25
 
 ## 备份
 
-源码和非敏感配置通过 GitHub 保存；模型和缓存可重新下载。Compose、Caddy 配置、私有环境文件和 release.json 已加入现有的异机加密备份，翻译目录中的 SQLite 数据库使用在线备份接口逐个导出。密钥只留在本机和 Mac，服务器不保存解密密钥。升级前先备份，不能把容器本身当作数据备份。
+源码和非敏感配置通过 GitHub 保存；模型和缓存可重新下载。Compose、Caddy 配置、私有环境文件和 release.json 已加入现有的异机加密备份，翻译目录中的 SQLite 数据库使用在线备份接口逐个导出。备份解密密钥只留在本机和 Mac，服务器不保存解密密钥。升级前先备份，不能把容器本身当作数据备份。
+
+## 本地模型服务
+
+聊天网页：https://ai.doufei.eu.org/ ；OpenAI 兼容 API：`https://ai.doufei.eu.org/v1`。
+网页需要在设置中填写 API Key。聊天记录由上游网页保存在浏览器；不要在共享浏览器保存密钥。
+
+复用宿主机 Caddy 和官方 llama.cpp ARM64 CPU 镜像，镜像使用 SHA-256 固定版本。模型为 Qwen3.6-35B-A3B 的 Unsloth UD-Q3_K_M 量化，权重约 15.46 GiB；模型仓库、提交、大小和 SHA-256 在 `llama-model.json` 中记录。本次只部署文本能力，不加载视觉投影文件。
+
+模型启用独立的 `llm` Compose profile。初始化时创建数据目录，运行固定版本下载和校验脚本：
+
+```sh
+sudo install -d -m 0755 /srv/public-services/data/llama/models
+sudo install -d -m 0700 /srv/public-services/data/llama/secrets
+sudo python3 scripts/fetch-llama-model.py \
+  --manifest llama-model.json --directory /srv/public-services/data/llama/models
+sudo python3 - <<'PY'
+import os, secrets
+from pathlib import Path
+p = Path('/srv/public-services/data/llama/secrets/api-key')
+if not p.exists():
+    p.write_text(secrets.token_urlsafe(32) + '\n')
+p.chmod(0o600)
+os.chown(p, 1000, 1000)
+PY
+docker compose --profile llm config --quiet
+docker compose --profile llm up -d --no-deps llama
+docker compose --profile llm ps llama
+```
+
+服务以 UID/GID 1000 运行，只读挂载模型和密钥；端口 18104 只绑定回环地址。使用 2 核 CPU、18 GiB 内存、8192 token 上下文、单并发，默认关闭思考模式，默认最多输出 1024 token。显式请求较大输出仍受到上下文窗口约束。禁用权重重排，控制 ARM CPU 加载时的内存峰值；内存达到容器上限时可能终止模型进程，Docker 会按重启策略恢复。对外入口隐藏指标和管理路由；模型没有宿主机命令执行能力，工具由调用方客户端执行。
+
+API Key 在服务器 `data/llama/secrets/api-key` 中，不能提交到仓库；已加入现有异机加密备份的输入清单，并在本机保留权限为 0600 的副本。API 请求使用 `Authorization: Bearer <API_KEY>`。本机 Pi 可以添加以下 provider（密钥通过环境变量传入）：
+
+```json
+{
+  "providers": {
+    "oci": {
+      "baseUrl": "https://ai.doufei.eu.org/v1",
+      "api": "openai-completions",
+      "apiKey": "${OCI_LLAMA_API_KEY}",
+      "models": [{
+        "id": "qwen3.6-35b-a3b-q3_k_m",
+        "reasoning": false,
+        "input": ["text"],
+        "contextWindow": 8192,
+        "maxTokens": 1024,
+        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+      }]
+    }
+  }
+}
+```
+
+配置后运行 `pi --provider oci --model qwen3.6-35b-a3b-q3_k_m`。首次处理长提示词比连续输出慢，适合单用户基础测试；短请求速度不代表大型代码库或一周连续 Agent 任务的性能。使用 `docker compose --profile llm stop llama` 可以释放模型内存，不影响三个工具服务。
+
+2026-10-22 基础验证：中文问答、SSE 流式输出、缺失和错误密钥返回 401、OpenAI 函数调用及结果续答、浏览器实际聊天均通过。Pi 1.3.0 实际读取文件并生成 `sum.js` 和计算结果，生成代码通过 5 项断言。2 核配额下短请求生成约 4 tokens/秒；Pi 的首次 614 token 提示词及工具请求约 86 秒，完整的三次模型请求约 124 秒。这是关闭扩展、MCP 和项目上下文后的最小读写任务，不能等同于完整项目 Agent 的性能。
 
 ## 已完成验证
 
