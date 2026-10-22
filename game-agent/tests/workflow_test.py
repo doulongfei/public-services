@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from controller_test import module
@@ -115,7 +116,7 @@ class Workflow(unittest.TestCase):
         def fail_once(*_):
             self.runner.HALT = True
             raise error
-        with patch.object(self.runner, 'clean_container'), patch.object(self.runner, 'owner_tree'), patch.object(self.runner, 'run_agent', side_effect=fail_once), patch.object(self.runner, 'wait', side_effect=halt_wait):
+        with patch.object(self.runner, 'clean_container'), patch.object(self.runner, 'owner_tree'), patch.object(self.runner.shutil, 'disk_usage', return_value=SimpleNamespace(free=64*1024**3)), patch.object(self.runner, 'run_agent', side_effect=fail_once), patch.object(self.runner, 'wait', side_effect=halt_wait):
             self.runner.main()
         return json.loads((self.base/'checkpoint.json').read_text()), json.loads((self.base/'public/state.json').read_text())
 
@@ -154,6 +155,15 @@ class Workflow(unittest.TestCase):
         self.assertEqual(state['topic_index'], 0)
         self.assertEqual(state['history'][-1]['result'], 'retrying')
         self.assertEqual([self.runner.delay(i) for i in range(1,7)], [240,480,960,1920,3600,3600])
+
+    def test_low_disk_wait_does_not_start_or_reject_a_round(self):
+        def halt_wait(*_): self.runner.HALT = True
+        with patch.object(self.runner, 'clean_container'), patch.object(self.runner.shutil, 'disk_usage', return_value=SimpleNamespace(free=1024**3)), patch.object(self.runner, 'run_agent') as worker, patch.object(self.runner, 'wait', side_effect=halt_wait):
+            self.runner.main()
+        state = json.loads((self.base/'public/state.json').read_text())
+        worker.assert_not_called()
+        self.assertEqual(state['round'], 0)
+        self.assertEqual(state['rejected'], 0)
 
     def test_invalid_declarative_scenarios_are_rejected(self):
         from acceptance import validate_check
