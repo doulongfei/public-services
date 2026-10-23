@@ -258,6 +258,14 @@ class Workflow(unittest.TestCase):
         self.assertEqual(state['history'][-1]['result'], 'interrupted')
         self.assertEqual(state['topic_index'], 0)
 
+    def test_container_exit_racing_with_pause_is_not_an_infrastructure_failure(self):
+        self.release.atomic(self.base/'control/commands.json',{'mode':'paused','feedback':''})
+        process=SimpleNamespace(stdout=io.StringIO(''),poll=lambda:143,returncode=143)
+        cfg={**self.cfg,'runtime_image':'fixture'}
+        with patch.object(self.runner.subprocess,'Popen',return_value=process):
+            with self.assertRaises(self.runner.Cancelled):
+                self.runner.run_agent(cfg,self.base/'history','prompt',self.base/'pause-race.jsonl',{'current_task':'wave-feedback'})
+
     def test_infrastructure_failure_has_separate_persistent_backoff(self):
         cp, state = self.run_failed_attempt(self.runner.InfrastructureFailure('model unavailable'))
         self.assertEqual(cp['code_failures'], 0)

@@ -253,6 +253,9 @@ def run_agent(cfg, candidate, prompt, logfile, state, files=None):
             reader.join(timeout=10)
             if reader.is_alive():
                 raise RuntimeError('Worker output stream did not close')
+    # 容器可能在循环再次检查控制指令前退出，暂停/停机优先于退出码分类。
+    if not permitted(cfg):
+        raise Cancelled('Round interrupted by owner control or deadline')
     if proc.returncode:
         raise InfrastructureFailure('Pi exited with code ' + str(proc.returncode) + ': ' + logfile.read_text(errors='replace')[-1200:])
     return parse_agent_log(logfile)
