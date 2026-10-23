@@ -180,7 +180,8 @@ try{
    assert.equal(state.wave,2);
    assert.ok(state.waveNotice.life>0&&state.waveNotice.text,'Wave notice must carry readable live state');
    assert.equal(await notice.isVisible(),true,'Wave transition must be visible on screen');
-   assert.equal((await notice.textContent()).trim(),state.waveNotice.text);
+   // 允许追加倒计时等辅助信息，核心波次文案必须保留在开头。
+   assert.ok((await notice.textContent()).trim().startsWith(state.waveNotice.text),'Notice must preserve the core wave text');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Wave text must fit the viewport');
    await page.getByRole('button',{name:'暂停游戏',exact:true}).click();
    await page.clock.runFor(32);
