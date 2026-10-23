@@ -3,7 +3,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import guard, {checkFile} from '../guard.mjs';
+import guard, {checkFile, alignIndentation} from '../guard.mjs';
+
+test('第 22/24 轮的缩进差异只在唯一匹配时对齐，不猜测代码内容', () => {
+  const source=" const secs=1;document.querySelector('#wave').textContent=`第 ${state.wave} 波`;\n if(state.phase==='over' && overlay.hidden){overlay.hidden=false;}";
+  const old="document.querySelector('#wave').textContent=`第 ${state.wave} 波`;\nif(state.phase==='over'";
+  const exact="document.querySelector('#wave').textContent=`第 ${state.wave} 波`;\n if(state.phase==='over'";
+  assert.equal(alignIndentation(source,old),exact);
+  assert.equal(alignIndentation(source+'\n'+source,old),old);
+  assert.equal(alignIndentation(source,old.replace('state.wave','state.other')),old.replace('state.wave','state.other'));
+  assert.equal(alignIndentation(source,exact),exact);
+});
 
 test('保护已有入口、任务范围及符号链接，允许小范围编辑', () => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'starharbor-guard-'));

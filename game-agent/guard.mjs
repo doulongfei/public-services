@@ -1,6 +1,17 @@
 import path from 'node:path';
 import fs from 'node:fs';
 
+// 保留 Pi 原有精确替换语义，仅修正唯一匹配的多行缩进差异。
+export function alignIndentation(content, oldText) {
+  if (content.includes(oldText) || oldText.length < 40 || oldText.length > 4096) return oldText;
+  const lines = oldText.split('\n');
+  if (lines.length < 2 || lines.length > 50 || !lines[0].trim() || !lines.at(-1).trim()) return oldText;
+  const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = lines.map(line => escape(line.replace(/^[ \t]+|[ \t]+$/g, ''))).join('[ \\t]*\\r?\\n[ \\t]*');
+  const matches = [...content.matchAll(new RegExp(pattern, 'g'))];
+  return matches.length === 1 ? matches[0][0] : oldText;
+}
+
 // 只允许修改当前任务的少量文件；完整覆盖只用于验收声明和新文件。
 export function checkFile(event, root, files) {
   const target = path.resolve(root, event.input.path ?? '');
@@ -14,9 +25,11 @@ export function checkFile(event, root, files) {
   if (event.toolName === 'edit') {
     // Pi 1.3 的真实参数是 edits[]，兼容旧版的顶层字段，逐块检查。
     const edits = event.input.edits ?? [event.input];
+    const content = fs.readFileSync(target, 'utf8');
     for (const edit of edits) {
       const old = edit.oldText ?? '', replacement = edit.newText ?? '';
       if (old.length > 300 && replacement.length < old.length * .4) return {block: true, reason: 'Destructive edit blocked. Preserve existing gameplay and make a small focused change.'};
+      edit.oldText = alignIndentation(content, old);
     }
   }
   if (event.toolName === 'read') event.input.limit = Math.min(event.input.limit ?? 70, 100);
