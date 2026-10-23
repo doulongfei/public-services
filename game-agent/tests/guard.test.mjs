@@ -55,6 +55,9 @@ test('波次页面只允许两个插入点，禁止重复递减核心计时和�
     const event=added=>({toolName:'edit',input:{path:'game/main.js',edits:anchors.map((oldText,index)=>({oldText,newText:oldText+'\n'+(index?added:'const waveNotice={};')}))}});
     const good=event("if(state.phase==='playing'&&state.waveNotice.life>0){waveNotice.text=state.waveNotice.text;}");
     assert.equal(checkFile(good,root,['game/main.js'],anchors),undefined);
+    const indented=event('showNotice();');indented.input.edits[1].oldText=' '+indented.input.edits[1].oldText;indented.input.edits[1].newText=' '+indented.input.edits[1].newText;
+    assert.equal(checkFile(indented,root,['game/main.js'],anchors),undefined);
+    assert.equal(indented.input.edits[1].oldText,anchors[1]);
     assert.equal(checkFile(event('state.waveNotice.life-=1;'),root,['game/main.js'],anchors).block,true);
     const third=event('showNotice();');third.input.edits.push({oldText:'updateWaveHud();',newText:'state.waveNotice.life=0;'});
     assert.equal(checkFile(third,root,['game/main.js'],anchors).block,true);

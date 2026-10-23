@@ -30,6 +30,12 @@ export function checkFile(event, root, files, anchors=[]) {
     const edits = event.input.edits ?? [event.input];
     const content = fs.readFileSync(target, 'utf8');
     if (anchors.length) {
+      for (const edit of edits) {
+        if (anchors.includes(edit.oldText.trim())) {
+          edit.oldText = edit.oldText.trim();
+          edit.newText = edit.newText.trimStart();
+        }
+      }
       const selected = edits.map(edit => edit.oldText);
       if (edits.length !== anchors.length || anchors.some(anchor => selected.filter(value => value === anchor).length !== 1)) {
         return {block:true,reason:'This UI stage permits exactly two insertions after the supplied short anchors. Keep launch, pause, timers and the existing wave HUD unchanged.'};

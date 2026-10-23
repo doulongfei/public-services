@@ -426,7 +426,7 @@ def make_prompt(cp, candidate, files=None):
             text += '''CURRENT STAGE: core.js has ALREADY passed wave tests and exposes state.waveNotice={text,life}.
 Make exactly TWO disjoint edits in ONE edit call, then finish with a short summary:
 1. Use oldText exactly "const pauseMsg=document.createElement('div');". Preserve it and append creation of a hidden div with id="wave-notice" to canvas.parentNode. Use individual style properties like the pause message; pointerEvents='none'.
-2. Use oldText exactly "step(state,dt,input);render(ctx,state);". Preserve it and append the notice update: show state.waveNotice.text ONLY when phase is playing, life>0 AND text is nonempty; hide otherwise. Set BOTH hidden and style.display consistently.
+2. Use oldText exactly "step(state,dt,input);render(ctx,state);". Preserve it and append the notice update. Use the exact condition: state.phase==='playing' && state.waveNotice?.life>0 && state.waveNotice.text. The lifetime field is state.waveNotice.life. Display state.waveNotice.text when this condition is true, hide otherwise. Set BOTH hidden and style.display consistently.
 Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the per-frame update already handles ready, pause, over and restart. No new timer, lastWave, callback, or core changes. The two short anchors above exist verbatim; do not include neighboring lines in oldText.\n'''
         else:
             text += 'CURRENT STAGE: core.js has ALREADY passed its feature tests and exposes the fields specified above. Only implement display/controls in this file; do not duplicate game rules in the UI.\n'
