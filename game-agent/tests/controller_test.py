@@ -47,6 +47,7 @@ class Boundaries(unittest.TestCase):
         runner = module('runner'); candidate = self.root / 'candidate'; (candidate / 'game').mkdir(parents=True)
         for name in ['index.html', 'main.js', 'core.js', 'render.js', 'style.css']:
             (candidate / 'game' / name).write_text('safe')
+        (candidate/'game/index.html').write_text('<html><canvas></canvas><script src="main.js"></script></html>')
         runner.validate_tree(candidate, ['private-secret'])
         target = candidate / 'game/main.js'
         for text in ['private-secret', 'fetch("https://example.com")', '<iframe>']:

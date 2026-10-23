@@ -47,6 +47,9 @@ services:
       - '16384'
       - --parallel
       - '1'
+      # 单槽持续编码复用活动 KV；禁用额外 RAM 提示缓存，避免挤出模型权重。
+      - --cache-ram
+      - '0'
       - --batch-size
       - '256'
       - --ubatch-size

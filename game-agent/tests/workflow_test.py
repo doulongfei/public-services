@@ -115,6 +115,8 @@ class Workflow(unittest.TestCase):
             p = self.base/name; d = json.loads(p.read_text());d['retry_at'] = 0;self.release.atomic(p,d)
         def fail_once(*_):
             self.runner.HALT = True
+            if isinstance(error, self.runner.ModelIncomplete):
+                (_[3]).write_text(json.dumps({'type': 'message_end', 'message': {'role': 'assistant', 'usage': {'totalTokens': 12, 'output': 3}}})+'\n')
             raise error
         with patch.object(self.runner, 'clean_container'), patch.object(self.runner, 'owner_tree'), patch.object(self.runner.shutil, 'disk_usage', return_value=SimpleNamespace(free=64*1024**3)), patch.object(self.runner, 'run_agent', side_effect=fail_once), patch.object(self.runner, 'wait', side_effect=halt_wait):
             self.runner.main()
@@ -139,6 +141,64 @@ class Workflow(unittest.TestCase):
         fourth, _ = self.run_failed_attempt(ValueError('code failed'))
         self.assertNotEqual(first['candidate'], fourth['candidate'])
         self.assertEqual(fourth['code_failures'], 4)
+
+    def test_mixed_model_infra_and_code_failures_restore_baseline(self):
+        first, _ = self.run_failed_attempt(self.runner.ModelIncomplete('budget exhausted'))
+        self.run_failed_attempt(self.runner.InfrastructureFailure('connection refused'))
+        third, _ = self.run_failed_attempt(ValueError('invalid code'))
+        self.assertNotIn('candidate', third)
+        self.assertEqual(third['attempt_failures'], 3)
+        self.assertEqual(third['model_failures'], 1)
+        fourth, _ = self.run_failed_attempt(self.runner.ModelIncomplete('budget exhausted'))
+        self.assertNotEqual(first['candidate'], fourth['candidate'])
+        self.assertEqual((self.base/fourth['candidate']/'game/index.html').read_bytes(), (self.base/'history/game/index.html').read_bytes())
+
+    def test_damaged_candidate_is_discarded_before_another_model_attempt(self):
+        first, _ = self.run_failed_attempt(self.runner.ModelIncomplete('aborted'))
+        (self.base/first['candidate']/'game/index.html').write_text('placeholder')
+        second, _ = self.run_failed_attempt(self.runner.ModelIncomplete('aborted'))
+        self.assertNotEqual(first['candidate'], second['candidate'])
+        self.assertEqual(second['resets'], 1)
+        self.assertIn('<canvas', (self.base/second['candidate']/'game/index.html').read_text())
+
+    def test_six_failures_defer_without_claiming_success_and_retry_after_queue(self):
+        for _ in range(6): cp, state = self.run_failed_attempt(self.runner.ModelIncomplete('budget exhausted'))
+        self.assertEqual(cp, {})
+        self.assertEqual(state['accepted'], 0)
+        self.assertEqual(state['topic_index'], 1)
+        self.assertEqual(state['history'][-1]['result'], 'deferred')
+        state['topic_index'] = len(self.runner.TOPICS)
+        state['deferred_tasks'][0]['after'] = 0
+        queued = self.runner.new_checkpoint(state, 7)
+        self.assertEqual(queued['task'], 'pause-overlay')
+        self.assertEqual(queued['next_cursor'], len(self.runner.TOPICS))
+
+    def test_failed_attempt_usage_is_counted_and_budget_abort_is_not_infra(self):
+        p = self.write_log(reason='error')
+        data = p.read_text().replace('"totalTokens": 12', '"totalTokens": 12, "output": 3').replace('"stopReason": "error"', '"stopReason": "error", "errorMessage": "This operation was aborted"')
+        p.write_text(data)
+        self.assertEqual(self.runner.agent_usage(p), (12, 3))
+        with self.assertRaises(self.runner.ModelIncomplete): self.runner.parse_agent_log(p)
+        _, state = self.run_failed_attempt(self.runner.ModelIncomplete('budget exhausted'))
+        self.assertEqual(state['tokens'], 12)
+        self.assertEqual(state['output_tokens'], 3)
+
+    def test_metadata_only_changes_are_not_game_source_changes(self):
+        target = self.base/'rounds/metadata'
+        shutil.copytree(self.base/'history', target, ignore=shutil.ignore_patterns('.git'))
+        (target/'game/acceptance.json').write_text('{"task":"enemy-types"}')
+        (target/'NOTES.md').write_text('claimed improvement')
+        self.assertEqual(self.runner.fingerprint(target), self.runner.fingerprint(self.base/'history'))
+
+    def test_task_prompt_includes_current_source_and_only_matching_contract(self):
+        cp = {'cursor': 2, 'task': 'enemy-types'}
+        prompt = self.runner.make_prompt(cp, self.base/'history')
+        self.assertIn('export function createState()', prompt)
+        self.assertIn('CURRENT /workspace/game/render.js', prompt)
+        self.assertNotIn('score":100', prompt)
+        self.assertNotIn('CURRENT /workspace/game/main.js', prompt)
+        from acceptance import validate_check
+        for _, _, check in self.runner.PLANS.values(): validate_check(check)
 
     def test_control_interruption_does_not_consume_code_retries(self):
         cp, state = self.run_failed_attempt(self.runner.Cancelled('paused'))
