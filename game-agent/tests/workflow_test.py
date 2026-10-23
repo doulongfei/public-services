@@ -221,6 +221,7 @@ class Workflow(unittest.TestCase):
         def resume(_cfg,_candidate,prompt,_log,_state,files):
             self.assertEqual(files,['main.js'])
             self.assertIn('ALREADY passed wave tests',prompt)
+            self.assertIn('exactly TWO disjoint edits',prompt)
             return 'UI done',0,2
         with patch.object(self.runner,'run_agent',side_effect=resume), patch.object(self.runner,'validate_runtime') as validator:
             summary,tools=self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)

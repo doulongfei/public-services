@@ -404,7 +404,11 @@ def make_prompt(cp, candidate, files=None):
         if files == ['core.js']:
             text += 'CURRENT STAGE: implement ONLY the game rules and state in core.js. DOM/UI will be implemented in a later stage. Store all new state in createState() and update it inside step(); do not introduce UI callbacks or extra parameters. Core feature tests must pass before proceeding.\n'
         elif cp['task'] == 'wave-feedback':
-            text += 'CURRENT STAGE: core.js has ALREADY passed wave tests and exposes state.waveNotice={text,life}. Only display this existing state in #wave-notice while playing and life>0, hide it otherwise. No separate timer, lastWave, callback or core change. Prefer setting individual style properties, as with the existing pause message. Keep the pause button usable.\n'
+            text += '''CURRENT STAGE: core.js has ALREADY passed wave tests and exposes state.waveNotice={text,life}.
+Make exactly TWO disjoint edits in ONE edit call, then finish with a short summary:
+1. Use oldText exactly "const pauseMsg=document.createElement('div');". Preserve it and append creation of a hidden div with id="wave-notice" to canvas.parentNode. Use individual style properties like the pause message; pointerEvents='none'.
+2. Use oldText exactly "step(state,dt,input);render(ctx,state);". Preserve it and append the notice update: show state.waveNotice.text ONLY when phase is playing, life>0 AND text is nonempty; hide otherwise. Set BOTH hidden and style.display consistently.
+Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the per-frame update already handles ready, pause, over and restart. No new timer, lastWave, callback, or core changes. The two short anchors above exist verbatim; do not include neighboring lines in oldText.\n'''
         else:
             text += 'CURRENT STAGE: core.js has ALREADY passed its feature tests and exposes the fields specified above. Only implement display/controls in this file; do not duplicate game rules in the UI.\n'
     else:
