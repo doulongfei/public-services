@@ -218,10 +218,15 @@ class Workflow(unittest.TestCase):
         self.assertEqual(cp['generation_step'],1)
         self.assertEqual(json.loads((self.base/'checkpoint.json').read_text())['generation_step'],1)
         self.assertEqual(self.release.current(self.base)['version'],self.first,'A core stage must never publish on its own')
+        (candidate/'game/main.js').write_text('unverified partial UI')
+        (candidate/'game/core.js').write_text((candidate/'game/core.js').read_text()+'\n// verified core marker\n')
+        cp['error']='UI stage interrupted'
         def resume(_cfg,_candidate,prompt,_log,_state,files):
             self.assertEqual(files,['main.js'])
             self.assertIn('ALREADY passed wave tests',prompt)
             self.assertIn('exactly TWO disjoint edits',prompt)
+            self.assertEqual((candidate/'game/main.js').read_bytes(),(self.base/'history/game/main.js').read_bytes())
+            self.assertIn('verified core marker',(candidate/'game/core.js').read_text())
             return 'UI done',0,2
         with patch.object(self.runner,'run_agent',side_effect=resume), patch.object(self.runner,'validate_runtime') as validator:
             summary,tools=self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)

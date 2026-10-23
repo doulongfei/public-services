@@ -435,6 +435,10 @@ def generate(cfg, cp, candidate, source, round_dir, state):
     results = cp.setdefault('stage_results', {})
     for index in range(cp.get('generation_step', 0), len(stages)):
         files = stages[index]
+        if index > 0 and cp['task'] in PLANS and cp.get('error'):
+            # 重试未通过的页面文件时丢弃其半成品，保留已验收的核心与前置阶段。
+            for name in files:
+                shutil.copyfile(source/'game'/name, candidate/'game'/name)
         state['phase'] = 'generating'
         state['generation_file'] = ', '.join(files)
         state['generation_step'] = f'{index+1}/{len(stages)}'
