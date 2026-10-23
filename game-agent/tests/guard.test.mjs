@@ -46,3 +46,19 @@ test('Pi 内部重试重置 turnIndex 后仍累计回合预算', async () => {
   await handlers.turn_start({turnIndex:0},{abort:()=>aborted++});
   assert.equal(aborted,1);
 });
+
+test('波次页面只允许两个插入点，禁止重复递减核心计时和删除 HUD', () => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'starharbor-wave-'));
+  const anchors=["const pauseMsg=document.createElement('div');",'step(state,dt,input);render(ctx,state);'];
+  try {
+    fs.mkdirSync(root+'/game');fs.writeFileSync(root+'/game/main.js',anchors.join('\n')+'\nupdateWaveHud();');
+    const event=added=>({toolName:'edit',input:{path:'game/main.js',edits:anchors.map((oldText,index)=>({oldText,newText:oldText+'\n'+(index?added:'const waveNotice={};')}))}});
+    const good=event("if(state.phase==='playing'&&state.waveNotice.life>0){waveNotice.text=state.waveNotice.text;}");
+    assert.equal(checkFile(good,root,['game/main.js'],anchors),undefined);
+    assert.equal(checkFile(event('state.waveNotice.life-=1;'),root,['game/main.js'],anchors).block,true);
+    const third=event('showNotice();');third.input.edits.push({oldText:'updateWaveHud();',newText:'state.waveNotice.life=0;'});
+    assert.equal(checkFile(third,root,['game/main.js'],anchors).block,true);
+    const removed=event('showNotice();');removed.input.edits[0].newText='deleted';
+    assert.equal(checkFile(removed,root,['game/main.js'],anchors).block,true);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
+});

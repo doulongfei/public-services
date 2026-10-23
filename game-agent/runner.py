@@ -70,6 +70,18 @@ PLANS = {
                {'kind': 'core', 'input': {'shield': True}, 'path': 'shield.cooldown', 'op': 'gt', 'value': 0}),
 }
 
+VIEW_PLANS = {
+    'enemy-types': 'Render existing enemies[].kind (normal/scout) with distinct colors or silhouettes. Read existing r and speed; do not change enemies or spawning.',
+    'wave-feedback': 'Display existing read-only state.waveNotice.text and life. The core already maintains the timer in seconds. Do not decrement life, change state, or replace the wave HUD update.',
+    'health-pickup': 'Draw existing pickups[] with kind health, x/y/r/life, with readable health colors. Core already handles collection, healing and expiry; never modify those fields.',
+    'weapon-upgrade': 'Display existing state.level and upgraded bullets clearly. Core already handles levels and firing; rendering must not change game state.',
+    'hit-feedback': 'Display existing state.damageFlash seconds with a small local effect. The core already expires it; do not decrement timers or change HP.',
+    'boss': 'Display existing enemy isBoss and telegraph seconds with a readable warning. Core already handles spawning and timer expiry; never change those fields.',
+    'shield': 'Display existing shield.active and shield.cooldown. In main.js add keyboard/touch input.shield and button aria-label 启动护盾; in render.js draw the existing state. Core owns activation, damage prevention and cooldown; do not mutate shield state in UI.',
+}
+
+WAVE_ANCHORS = ["const pauseMsg=document.createElement('div');", 'step(state,dt,input);render(ctx,state);']
+
 
 def task_files(task):
     if task in PLANS:
@@ -177,7 +189,7 @@ def public_failure(failure):
         return '模型客户端缓存初始化失败，试玩版本保持上一版。'
     if 'No game source changes' in failure:
         return '本轮没有生成游戏源码变更，未发布。'
-    if 'interrupted' in failure or 'cancelled' in failure:
+    if failure.startswith(('Round interrupted', 'Tests interrupted', 'Publication cancelled')):
         return '本轮因控制指令、截止时间或资源预算中止，未发布。'
     if 'Pi exited' in failure or 'Pi did not' in failure:
         return '模型客户端运行未正常完成，未发布；运行器将重试。'
@@ -217,6 +229,7 @@ def run_agent(cfg, candidate, prompt, logfile, state, files=None):
             '--tmpfs', '/tmp:rw,size=192m,mode=1777',
             '-e', 'PI_CODING_AGENT_DIR=/tmp/pi-profile',
             '-e', 'STARHARBOR_FILES=' + json.dumps(allowed),
+            '-e', 'STARHARBOR_INSERT_ANCHORS=' + json.dumps(WAVE_ANCHORS if state['current_task']=='wave-feedback' and files==['main.js'] else []),
             '--mount', f'type=bind,src={candidate},dst=/workspace',
             '--mount', f'type=bind,src={APP / "models.json"},dst=/run/config/models.json,readonly',
             '--mount', f'type=bind,src={APP / "settings.json"},dst=/run/config/settings.json,readonly',
@@ -402,7 +415,8 @@ def make_prompt(cp, candidate, files=None):
     if cursor >= len(TOPICS):
         detail = 'Choose one real missing feature or defect from the source and feedback. Optional review lens: ' + detail
     files = files or task_files(cp['task'])
-    text = f"Task ID: {cp['task']}. {PLANS.get(cp['task'], (None, detail))[1]}\n"
+    instruction = VIEW_PLANS[cp['task']] if cp['task'] in PLANS and files != ['core.js'] else PLANS.get(cp['task'], (None, detail))[1]
+    text = f"Task ID: {cp['task']}. {instruction}\n"
     text += 'Edit only ' + ', '.join('game/'+f for f in files) + '. Source is included below; do not survey other files. Make minimal edits and finish normally. Preserve all existing behavior.\n'
     if cp['task'] in PLANS:
         text += 'The controller supplies acceptance.json and records your summary in NOTES.md. You only edit game source; do not write metadata.\n'

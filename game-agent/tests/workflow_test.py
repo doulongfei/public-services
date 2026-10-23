@@ -113,6 +113,7 @@ class Workflow(unittest.TestCase):
         with self.assertRaisesRegex(self.runner.ModelIncomplete,'model_turns') as error:
             self.runner.parse_agent_log(p)
         self.assertIn('8 次回合',self.runner.public_failure(str(error.exception)))
+        self.assertIn('固定验证',self.runner.public_failure('Assertion failed\nℹ cancelled 0\nNode.js v24'))
 
     def run_failed_attempt(self, error):
         def halt_wait(*_): self.runner.HALT = True
@@ -225,6 +226,8 @@ class Workflow(unittest.TestCase):
             self.assertEqual(files,['main.js'])
             self.assertIn('ALREADY passed wave tests',prompt)
             self.assertIn('exactly TWO disjoint edits',prompt)
+            self.assertNotIn('On a wave change set waveNotice',prompt)
+            self.assertIn('Do not decrement life',prompt)
             self.assertEqual((candidate/'game/main.js').read_bytes(),(self.base/'history/game/main.js').read_bytes())
             self.assertIn('verified core marker',(candidate/'game/core.js').read_text())
             return 'UI done',0,2
