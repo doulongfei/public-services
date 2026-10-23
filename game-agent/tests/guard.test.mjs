@@ -18,6 +18,8 @@ test('保护已有入口、任务范围及符号链接，允许小范围编辑',
     assert.equal(checkFile(event('read','../outside'),root,files).block,true);
     assert.equal(checkFile(event('edit','game/render.js'),root,files).block,true);
     assert.equal(checkFile(event('edit','game/core.js',{oldText:'x'.repeat(500),newText:'placeholder'}),root,files).block,true);
+    assert.equal(checkFile(event('edit','game/core.js',{edits:[{oldText:'step()',newText:'step(s)'},{oldText:'x'.repeat(500),newText:'placeholder'}]}),root,files).block,true);
+    assert.equal(checkFile(event('edit','game/core.js',{edits:[{oldText:'step()',newText:'step(s)'}]}),root,files),undefined);
     assert.equal(checkFile(event('edit','game/core.js',{oldText:'step()',newText:'step(s)'}),root,files),undefined);
     assert.equal(checkFile(event('write','game/acceptance.json',{content:'{}'}),root,files),undefined);
   } finally {fs.rmSync(root,{recursive:true,force:true});}

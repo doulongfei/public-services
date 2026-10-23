@@ -81,6 +81,17 @@ def task_files(task):
             'performance': ['core.js', 'render.js'], 'onboarding': ['main.js', 'index.html']}.get(task, ['core.js', 'render.js'])
 
 
+def generation_stages(task):
+    # 固定功能先实现并验收核心规则，再让独立上下文实现页面，禁止跨层来回修补。
+    return [[name] for name in task_files(task)] if task in PLANS else [task_files(task)]
+
+
+def reset_generation(cp):
+    cp['stage'] = 'generating'
+    cp['generation_step'] = 0
+    cp['stage_results'] = {}
+
+
 def load(path, default=None):
     try:
         return json.loads(path.read_text())
@@ -156,6 +167,10 @@ def save(state):
 def public_failure(failure):
     if 'No new acceptance check' in failure:
         return '本轮没有证明相对已发布版本的有效改进，未发布。'
+    if 'model_turns' in failure:
+        return '模型耗尽单阶段 8 次回合，候选未发布；下次继续当前阶段，连续失败会恢复基线。'
+    if 'tool_calls' in failure:
+        return '模型耗尽单阶段工具调用预算，候选未发布；下次继续当前阶段。'
     if 'Model did not finish' in failure or 'agent_end' in failure or 'budget' in failure:
         return '模型轮次未正常完成，将缩小改动后重试；连续失败会恢复已发布基线。'
     if 'Credential store read failed' in failure:
@@ -190,14 +205,18 @@ def record_output(process, output):
         output.flush()
 
 
-def run_agent(cfg, candidate, prompt, logfile, state):
+def run_agent(cfg, candidate, prompt, logfile, state, files=None):
+    files = files or task_files(state['current_task'])
+    allowed = ['game/'+f for f in files]
+    if state['current_task'] not in PLANS:
+        allowed += ['game/acceptance.json', 'NOTES.md']
     args = ['docker', 'run', '--rm', '--init', '--name', NAME,
             '--network', 'starharbor-model', '--user', '1000:1000', '--read-only',
             '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
             '--cpus', '0.5', '--memory', '768m', '--memory-swap', '768m', '--pids-limit', '96',
             '--tmpfs', '/tmp:rw,size=192m,mode=1777',
             '-e', 'PI_CODING_AGENT_DIR=/tmp/pi-profile',
-            '-e', 'STARHARBOR_FILES=' + json.dumps(['game/'+f for f in task_files(state['current_task'])] + ['game/acceptance.json', 'NOTES.md']),
+            '-e', 'STARHARBOR_FILES=' + json.dumps(allowed),
             '--mount', f'type=bind,src={candidate},dst=/workspace',
             '--mount', f'type=bind,src={APP / "models.json"},dst=/run/config/models.json,readonly',
             '--mount', f'type=bind,src={APP / "settings.json"},dst=/run/config/settings.json,readonly',
@@ -209,7 +228,7 @@ def run_agent(cfg, candidate, prompt, logfile, state):
             '--no-session', '--no-extensions', '--extension', '/run/config/guard.mjs', '--no-mcp',
             '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--offline',
             '--thinking', 'off', '--tools', 'read,edit,write', '--mode', 'json',
-            '--system-prompt', 'You develop Starharbor, a Chinese browser survival game. The prompt includes current source: use edit immediately, avoid redundant reads and plans. Make one small working improvement in the listed files only. Never replace existing source with write. Preserve exports, window.starharbor.snapshot(), button labels and controls. No dependencies, network calls or inline scripts. Tests run externally. Finish edits within 6 turns, then give a short Chinese summary without tools. Hard limit 8 turns.',
+            '--system-prompt', 'You develop Starharbor, a Chinese browser survival game. This is ONE implementation stage. Current source is included: edit it immediately. Use a SINGLE edit call with edits:[{oldText,newText},...] for disjoint changes in the file. Copy small unique oldText anchors exactly, without inventing whitespace. Each oldText matches the ORIGINAL file before the call. Do not pad edits with unchanged functions. Only modify the listed file(s). Preserve exports, snapshot API, labels and controls. No dependencies, network calls or inline scripts. Tests run externally. After 1-3 edit calls, finish with a brief Chinese summary, without more tools. Hard limit 8 turns.',
             '-p', prompt]
     with logfile.open('w') as output:
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -257,7 +276,7 @@ def agent_usage(logfile):
 
 
 def parse_agent_log(logfile):
-    messages = []; tools = 0; successful_writes = 0; ended = False
+    messages = []; tools = 0; successful_writes = 0; ended = False; limit = None
     for line in logfile.read_text(errors='replace').splitlines():
         try:
             entry = json.loads(line)
@@ -267,6 +286,8 @@ def parse_agent_log(logfile):
             continue
         if entry.get('type') == 'agent_end':
             ended = True
+        if entry.get('type') == 'guard_limit':
+            limit = entry.get('reason')
         if entry.get('type') == 'tool_execution_end':
             tools += 1
             if entry.get('toolName') in ('edit', 'write') and entry.get('isError') is False:
@@ -275,6 +296,8 @@ def parse_agent_log(logfile):
             messages.append(entry['message'])
     if not ended or not messages:
         raise ModelIncomplete('Pi did not emit agent_end and a final assistant message')
+    if limit:
+        raise ModelIncomplete('Stage budget exhausted: ' + limit)
     final = messages[-1]
     if final.get('stopReason') != 'stop':
         error = 'Model did not finish normally: ' + str(final.get('stopReason'))
@@ -290,7 +313,7 @@ def parse_agent_log(logfile):
     return summary, sum(m.get('usage', {}).get('totalTokens', 0) for m in messages), tools
 
 
-def validate_runtime(cfg, candidate, baseline, outputs, suite):
+def validate_runtime(cfg, candidate, baseline, outputs, suite, core_only=False):
     outputs.mkdir(parents=True, exist_ok=True)
     os.chown(outputs, 1000, 1000)
     plan = outputs.parent / 'contracts.json'
@@ -305,7 +328,7 @@ def validate_runtime(cfg, candidate, baseline, outputs, suite):
             '--mount', f'type=bind,src={plan},dst=/run/contracts.json,readonly',
             '--mount', f'type=bind,src={outputs},dst=/output',
             cfg['runtime_image'],
-            'sh', '-c', 'for f in /workspace/game/*.js; do node --check "$f" || exit 1; done; node --test /harness/core.test.mjs && node /harness/features.mjs && node /harness/browser.mjs']
+            'sh', '-c', 'for f in /workspace/game/*.js; do node --check "$f" || exit 1; done; node --test /harness/core.test.mjs && node /harness/features.mjs' + ('' if core_only else ' && node /harness/browser.mjs')]
     logfile = outputs / 'tests.txt'
     with logfile.open('w') as output:
         result = subprocess.Popen(args, stdout=output, stderr=subprocess.STDOUT)
@@ -368,16 +391,22 @@ def candidate_path(cp):
     return path
 
 
-def make_prompt(cp, candidate):
+def make_prompt(cp, candidate, files=None):
     cursor = cp['cursor']
     detail = TOPICS[cursor % len(TOPICS)][1]
     if cursor >= len(TOPICS):
         detail = 'Choose one real missing feature or defect from the source and feedback. Optional review lens: ' + detail
-    files = task_files(cp['task'])
+    files = files or task_files(cp['task'])
     text = f"Task ID: {cp['task']}. {PLANS.get(cp['task'], (None, detail))[1]}\n"
     text += 'Edit only ' + ', '.join('game/'+f for f in files) + '. Source is included below; do not survey other files. Make minimal edits and finish normally. Preserve all existing behavior.\n'
     if cp['task'] in PLANS:
         text += 'The controller supplies acceptance.json and records your summary in NOTES.md. You only edit game source; do not write metadata.\n'
+        if files == ['core.js']:
+            text += 'CURRENT STAGE: implement ONLY the game rules and state in core.js. DOM/UI will be implemented in a later stage. Store all new state in createState() and update it inside step(); do not introduce UI callbacks or extra parameters. Core feature tests must pass before proceeding.\n'
+        elif cp['task'] == 'wave-feedback':
+            text += 'CURRENT STAGE: core.js has ALREADY passed wave tests and exposes state.waveNotice={text,life}. Only display this existing state in #wave-notice while playing and life>0, hide it otherwise. No separate timer, lastWave, callback or core change. Prefer setting individual style properties, as with the existing pause message. Keep the pause button usable.\n'
+        else:
+            text += 'CURRENT STAGE: core.js has ALREADY passed its feature tests and exposes the fields specified above. Only implement display/controls in this file; do not duplicate game rules in the UI.\n'
     else:
         text += f'''Also write game/acceptance.json with {{"task":"{cp['task']}","checks":[...]}}. One check must fail on the old version.
 Checks: core {{kind:"core",initial:{{}},steps:1,path:"hp",op:"gt",value:0}}; ui {{kind:"ui",selector:"#id",phase:"playing",property:"text",op:"contains",value:"text"}}; visual {{kind:"visual",selector:"#arena"}}. Only operators eq/gt/gte/lt/lte/contains/exists. No executable tests. Choose a check specific to your change, not the hp example. Existing sh_best storage, #best and pause overlay must keep working.\n'''
@@ -393,6 +422,42 @@ Checks: core {{kind:"core",initial:{{}},steps:1,path:"hp",op:"gt",value:0}}; ui 
     return text
 
 
+def generate(cfg, cp, candidate, source, round_dir, state):
+    stages = generation_stages(cp['task'])
+    end = min(time.time()+cfg['round_timeout'], cfg['deadline'])
+    results = cp.setdefault('stage_results', {})
+    for index in range(cp.get('generation_step', 0), len(stages)):
+        files = stages[index]
+        state['phase'] = 'generating'
+        state['generation_file'] = ', '.join(files)
+        state['generation_step'] = f'{index+1}/{len(stages)}'
+        save(state)
+        logfile = round_dir/f'pi-{index}.jsonl'
+        remaining = end-time.time()
+        if remaining <= 0:
+            raise ModelIncomplete('Round exceeded time budget between stages')
+        try:
+            summary, _, tools = run_agent({**cfg, 'round_timeout': remaining}, candidate, make_prompt(cp, candidate, files), logfile, state, files=files)
+        finally:
+            tokens, output = agent_usage(logfile)
+            state['tokens'] += tokens
+            state['output_tokens'] = state.get('output_tokens', 0)+output
+            atomic(round_dir/f'usage-{index}.json', {'tokens': tokens, 'output_tokens': output})
+            save(state)
+        if files == ['core.js'] and cp['task'] in PLANS:
+            approved = load(BASE/'contracts.json', {'checks': [], 'features': []})
+            check = PLANS[cp['task']][2]
+            state['phase'] = 'testing'; save(state)
+            validate_runtime(cfg, candidate, source, round_dir/f'stage-{index}',
+                             {'checks': approved['checks']+[check], 'new_checks': [check],
+                              'features': sorted(set(approved['features']+[cp['task']]))}, core_only=True)
+        results[str(index)] = {'summary': summary, 'tools': tools}
+        cp['generation_step'] = index+1
+        cp.pop('error', None)
+        checkpoint(cp)
+    return '\n'.join(results[str(i)]['summary'] for i in range(len(stages))), sum(results[str(i)]['tools'] for i in range(len(stages)))
+
+
 def delay(failures):
     return min(3600, 120 * 2**min(failures, 5))
 
@@ -406,7 +471,7 @@ def main():
     secrets = [Path(cfg['model_key']).read_text().strip(), (BASE / 'control/api-key').read_text().strip()]
     state = release.recover(BASE) or load(BASE / 'public/state.json', {'round': 0, 'accepted': 0, 'rejected': 0, 'history': [], 'tokens': 0})
     state.update({'started_at': cfg['started_at'], 'deadline': cfg['deadline'], 'model': 'qwen3.6-35b-a3b-q3_k_m',
-                  'workflow_version': 3, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns': 8}})
+                  'workflow_version': 4, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3}})
     cp = load(BASE / 'checkpoint.json', {})
     clean_container()
     try:
@@ -439,7 +504,7 @@ def main():
                         validate_tree(candidate, secrets)
                     except (ValueError, UnicodeError):
                         cp.pop('candidate', None)
-                        cp['stage'] = 'generating'
+                        reset_generation(cp)
                         cp['resets'] = cp.get('resets', 0)+1
                         cp['error'] = 'Damaged candidate discarded; restored published source. Make only the requested small edit.'
                         candidate = None
@@ -448,17 +513,10 @@ def main():
                     shutil.copytree(source, candidate)
                     owner_tree(candidate)
                     cp['candidate'] = str(candidate.relative_to(BASE))
-                    cp['stage'] = 'generating'
+                    reset_generation(cp)
                 checkpoint(cp)
                 if cp.get('stage') != 'generated':
-                    logfile = round_dir / 'pi.jsonl'
-                    try:
-                        summary, _, tools = run_agent(cfg, candidate, make_prompt(cp, candidate), logfile, state)
-                    finally:
-                        tokens, output = agent_usage(logfile)
-                        state['tokens'] += tokens
-                        state['output_tokens'] = state.get('output_tokens', 0)+output
-                        atomic(round_dir/'usage.json', {'tokens': tokens, 'output_tokens': output})
+                    summary, tools = generate(cfg, cp, candidate, source, round_dir, state)
                     cp.update({'summary': summary, 'tools': tools, 'stage': 'generated'})
                     if task in PLANS:
                         atomic(candidate/'game/acceptance.json', {'task': task, 'checks': [PLANS[task][2]]})
@@ -487,6 +545,7 @@ def main():
                 release_id = f'{number:05d}-{version[:12]}'
                 next_state = json.loads(json.dumps(state))
                 next_state.update({'accepted': state['accepted']+1, 'last_release': version[:12], 'release_id': release_id,
+                                   'generation_file': None, 'generation_step': None,
                                    'pause_overlay': 'pause-overlay' in features, 'accepted_features': features,
                                    'topic_index': cp.get('next_cursor', cp['cursor']+1), 'phase': 'cooldown', 'failure_count': 0,
                                    'retry_at': time.time()+cfg['cooldown'], 'updated_at': time.time()})
@@ -525,10 +584,11 @@ def main():
                     result = 'retrying' if infra or incomplete else 'rejected'
                     if not infra:
                         cp['stage'] = 'generating'
+                        cp['generation_step'] = min(cp.get('generation_step', 0), len(generation_stages(task))-1)
                     # 所有失败共用回退阈值，不能因错误分类而无限复用坏候选。
                     if cp['attempt_failures'] % 3 == 0:
                         cp.pop('candidate', None)
-                        cp['stage'] = 'generating'
+                        reset_generation(cp)
                         cp['resets'] = cp.get('resets', 0)+1
                 checkpoint(cp)
                 event(state, {'round': number, 'task': task, 'result': result,

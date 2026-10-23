@@ -166,6 +166,31 @@ try{
    assert.equal((await page.locator('#best').textContent()).trim(),persisted,'Earned best score must survive reload');
   }finally{await context.close();}
  }
+ if(suite.features.includes('wave-feedback')){
+  const {context,page}=await openCheck();
+  try{
+   await page.evaluate(()=>{Math.random=()=>.625;});
+   await page.getByRole('button',{name:'开始游戏 →',exact:true}).click();
+   const notice=page.locator('#wave-notice');
+   assert.equal(await notice.isVisible(),false,'No wave notice before a transition');
+   await page.clock.runFor(20100);
+   const state=await page.evaluate(()=>window.starharbor.snapshot());
+   assert.equal(state.phase,'playing','Wave scenario must stay playable');
+   assert.equal(state.wave,2);
+   assert.ok(state.waveNotice.life>0&&state.waveNotice.text,'Wave notice must carry readable live state');
+   assert.equal(await notice.isVisible(),true,'Wave transition must be visible on screen');
+   assert.equal((await notice.textContent()).trim(),state.waveNotice.text);
+   await page.getByRole('button',{name:'暂停游戏',exact:true}).click();
+   await page.clock.runFor(32);
+   const life=await page.evaluate(()=>window.starharbor.snapshot().waveNotice.life);
+   await page.clock.runFor(500);
+   assert.equal(await page.evaluate(()=>window.starharbor.snapshot().waveNotice.life),life,'Pause must freeze the notice timer');
+   assert.equal(await notice.isVisible(),false,'Wave notice must not obscure pause');
+   await page.getByRole('button',{name:'继续游戏',exact:true}).click();
+   await page.clock.runFor(64);assert.equal(await notice.isVisible(),true);
+   await page.clock.runFor(2500);assert.equal(await notice.isVisible(),false,'Wave notice must expire');
+  }finally{await context.close();}
+ }
  if(suite.features.includes('shield')){
   const {context,page}=await openCheck();
   try{

@@ -9,6 +9,7 @@ async function refresh(){
   $('phase').textContent=phases[s.phase]||s.phase;$('round').textContent=s.round??0;$('counts').textContent=`${s.accepted??0} / ${s.rejected??0}`;
   const seconds=Math.max(0,(s.deadline??Date.now()/1000)-Date.now()/1000);$('remaining').textContent=`${Math.floor(seconds/86400)}天 ${Math.floor(seconds/3600)%24}时 ${Math.floor(seconds/60)%60}分`;
   $('task').textContent=`当前任务：${tasks[s.current_task]||'首个版本准备中'} · 最新版本：${s.last_release||'基线'}${s.phase==='generating'&&s.round_started_at?' · 本轮已运行 '+Math.floor((Date.now()/1000-s.round_started_at)/60)+' 分钟':''}`;
+  if(s.generation_file&&['generating','testing','cooldown'].includes(s.phase))$('task').textContent+=` · 阶段 ${s.generation_step}：${s.generation_file}`;
   const terminal=['stopped','completed'].includes(s.phase);
   for(const action of ['pause','resume','stop'])$(action).disabled=terminal;
   if(s.phase==='cooldown'&&s.retry_at>Date.now()/1000)$('task').textContent+=' · '+Math.ceil((s.retry_at-Date.now()/1000)/60)+' 分钟后继续';

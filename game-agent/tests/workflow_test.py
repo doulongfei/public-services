@@ -107,13 +107,20 @@ class Workflow(unittest.TestCase):
         p.write_text(json.dumps({'type': 'tool_execution_end', 'toolName': 'edit', 'isError': True})+'\n'+p.read_text())
         self.assertEqual(self.runner.parse_agent_log(p)[2], 2)
 
+    def test_guard_limit_surfaces_the_actual_retry_reason(self):
+        p=self.write_log(reason='error')
+        p.write_text(json.dumps({'type':'guard_limit','reason':'model_turns','limit':8})+'\n'+p.read_text())
+        with self.assertRaisesRegex(self.runner.ModelIncomplete,'model_turns') as error:
+            self.runner.parse_agent_log(p)
+        self.assertIn('8 次回合',self.runner.public_failure(str(error.exception)))
+
     def run_failed_attempt(self, error):
         def halt_wait(*_): self.runner.HALT = True
         self.runner.HALT = False
         # 模拟退避时间已到；实际候选与失败计数由运行器保存和恢复。
         for name in ('checkpoint.json', 'public/state.json'):
             p = self.base/name; d = json.loads(p.read_text());d['retry_at'] = 0;self.release.atomic(p,d)
-        def fail_once(*_):
+        def fail_once(*_, **_kwargs):
             self.runner.HALT = True
             if isinstance(error, self.runner.ModelIncomplete):
                 (_[3]).write_text(json.dumps({'type': 'message_end', 'message': {'role': 'assistant', 'usage': {'totalTokens': 12, 'output': 3}}})+'\n')
@@ -189,6 +196,48 @@ class Workflow(unittest.TestCase):
         (target/'game/acceptance.json').write_text('{"task":"enemy-types"}')
         (target/'NOTES.md').write_text('claimed improvement')
         self.assertEqual(self.runner.fingerprint(target), self.runner.fingerprint(self.base/'history'))
+
+    def test_staged_wave_workflow_validates_core_before_ui_and_resumes_failed_stage(self):
+        candidate = self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history', candidate, ignore=shutil.ignore_patterns('.git'))
+        cp = {'task': 'wave-feedback', 'cursor': 3, 'stage': 'generating'}
+        state = copy.deepcopy(self.state); state['current_task'] = cp['task']
+        calls=[]
+        def agent(_cfg, _candidate, prompt, _log, _state, files):
+            calls.append(tuple(files))
+            if files == ['main.js']: raise self.runner.ModelIncomplete('stage budget exhausted')
+            self.assertNotIn('CURRENT /workspace/game/main.js', prompt)
+            return 'core done', 0, 1
+        def verify(*args, **kwargs):
+            calls.append('verified')
+            self.assertTrue(kwargs['core_only'])
+        with patch.object(self.runner,'run_agent',side_effect=agent), patch.object(self.runner,'validate_runtime',side_effect=verify):
+            with self.assertRaises(self.runner.ModelIncomplete):
+                self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
+        self.assertEqual(calls,[('core.js',),'verified',('main.js',)])
+        self.assertEqual(cp['generation_step'],1)
+        self.assertEqual(json.loads((self.base/'checkpoint.json').read_text())['generation_step'],1)
+        self.assertEqual(self.release.current(self.base)['version'],self.first,'A core stage must never publish on its own')
+        def resume(_cfg,_candidate,prompt,_log,_state,files):
+            self.assertEqual(files,['main.js'])
+            self.assertIn('ALREADY passed wave tests',prompt)
+            return 'UI done',0,2
+        with patch.object(self.runner,'run_agent',side_effect=resume), patch.object(self.runner,'validate_runtime') as validator:
+            summary,tools=self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
+        validator.assert_not_called()
+        self.assertEqual(summary,'core done\nUI done')
+        self.assertEqual(tools,3)
+
+    def test_failed_core_contract_does_not_advance_to_ui(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        cp={'task':'wave-feedback','cursor':3,'stage':'generating'}
+        state={**self.state,'current_task':'wave-feedback'}
+        with patch.object(self.runner,'run_agent',return_value=('incomplete core',0,1)) as agent, patch.object(self.runner,'validate_runtime',side_effect=ValueError('waveNotice is missing')):
+            with self.assertRaisesRegex(ValueError,'waveNotice'):
+                self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
+        self.assertEqual(agent.call_count,1)
+        self.assertEqual(cp.get('generation_step',0),0)
 
     def test_task_prompt_includes_current_source_and_only_matching_contract(self):
         cp = {'cursor': 2, 'task': 'enemy-types'}
