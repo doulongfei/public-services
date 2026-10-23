@@ -614,8 +614,10 @@ def main():
                         cp['generation_step'] = min(cp.get('generation_step', 0), len(generation_stages(task))-1)
                     # 所有失败共用回退阈值，不能因错误分类而无限复用坏候选。
                     if cp['attempt_failures'] % 3 == 0:
-                        cp.pop('candidate', None)
-                        reset_generation(cp)
+                        if cp.get('generation_step', 0) == 0:
+                            cp.pop('candidate', None)
+                            reset_generation(cp)
+                        # 后置阶段的文件会在重试前单独恢复，已经验收的前置阶段保留。
                         cp['resets'] = cp.get('resets', 0)+1
                 checkpoint(cp)
                 event(state, {'round': number, 'task': task, 'result': result,

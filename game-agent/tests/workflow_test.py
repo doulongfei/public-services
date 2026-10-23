@@ -169,6 +169,20 @@ class Workflow(unittest.TestCase):
         self.assertEqual(second['resets'], 1)
         self.assertIn('<canvas', (self.base/second['candidate']/'game/index.html').read_text())
 
+    def test_third_ui_failure_keeps_validated_core_checkpoint(self):
+        candidate=self.base/'rounds/00000/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        cp={'base_version':self.first,'cursor':3,'next_cursor':4,'task':'wave-feedback','stage':'generating',
+            'candidate':'rounds/00000/candidate','generation_step':1,'stage_results':{'0':{'summary':'verified core','tools':1}},
+            'code_failures':2,'infra_failures':0,'model_failures':0,'attempt_failures':2}
+        self.release.atomic(self.base/'checkpoint.json',cp)
+        state={**self.state,'topic_index':3};self.release.atomic(self.base/'public/state.json',state)
+        result,state=self.run_failed_attempt(ValueError('UI assertion failed'))
+        self.assertEqual(result['generation_step'],1)
+        self.assertEqual(result['candidate'],cp['candidate'])
+        self.assertEqual(result['stage_results']['0']['summary'],'verified core')
+        self.assertEqual(state['topic_index'],3)
+
     def test_six_failures_defer_without_claiming_success_and_retry_after_queue(self):
         for _ in range(6): cp, state = self.run_failed_attempt(self.runner.ModelIncomplete('budget exhausted'))
         self.assertEqual(cp, {})
