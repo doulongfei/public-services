@@ -271,6 +271,14 @@ class Workflow(unittest.TestCase):
             with self.assertRaises(self.runner.Cancelled):
                 self.runner.run_agent(cfg,self.base/'history','prompt',self.base/'pause-race.jsonl',{'current_task':'wave-feedback'})
 
+    def test_test_container_exit_racing_with_pause_preserves_the_same_boundary(self):
+        self.release.atomic(self.base/'control/commands.json',{'mode':'paused','feedback':''})
+        process=SimpleNamespace(poll=lambda:143,returncode=143)
+        cfg={**self.cfg,'runtime_image':'fixture'}
+        with patch.object(self.runner.subprocess,'Popen',return_value=process),patch.object(self.runner.os,'chown'):
+            with self.assertRaises(self.runner.Cancelled):
+                self.runner.validate_runtime(cfg,self.base/'history',self.base/'history',self.base/'test-race-output',{'checks':[],'features':[]})
+
     def test_infrastructure_failure_has_separate_persistent_backoff(self):
         cp, state = self.run_failed_attempt(self.runner.InfrastructureFailure('model unavailable'))
         self.assertEqual(cp['code_failures'], 0)

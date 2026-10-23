@@ -349,6 +349,8 @@ def validate_runtime(cfg, candidate, baseline, outputs, suite, core_only=False):
             if result.poll() is None:
                 subprocess.run(['docker', 'rm', '-f', TEST_NAME], capture_output=True, timeout=20)
                 result.wait(timeout=20)
+    if not permitted(cfg):
+        raise Cancelled('Tests interrupted by owner control or deadline')
     if result.returncode in (125, 126, 127, 137, 143):
         raise InfrastructureFailure('Test container failed: ' + logfile.read_text()[-2000:])
     if result.returncode:
