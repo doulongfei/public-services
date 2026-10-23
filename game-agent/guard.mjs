@@ -8,8 +8,11 @@ export function alignIndentation(content, oldText) {
   if (lines.length < 2 || lines.length > 50 || !lines[0].trim() || !lines.at(-1).trim()) return oldText;
   const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = lines.map(line => escape(line.replace(/^[ \t]+|[ \t]+$/g, ''))).join('[ \\t]*\\r?\\n[ \\t]*');
-  const matches = [...content.matchAll(new RegExp(pattern, 'g'))];
-  return matches.length === 1 ? matches[0][0] : oldText;
+  const matcher = new RegExp(pattern, 'g'), first = matcher.exec(content);
+  if (!first) return oldText;
+  // 第二次搜索从起点后一位开始，重叠片段也必须算作有歧义。
+  matcher.lastIndex = first.index + 1;
+  return matcher.exec(content) ? oldText : first[0];
 }
 
 // 只允许修改当前任务的少量文件；完整覆盖只用于验收声明和新文件。

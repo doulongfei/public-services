@@ -13,6 +13,9 @@ test('第 22/24 轮的缩进差异只在唯一匹配时对齐，不猜测代码�
   assert.equal(alignIndentation(source+'\n'+source,old),old);
   assert.equal(alignIndentation(source,old.replace('state.wave','state.other')),old.replace('state.wave','state.other'));
   assert.equal(alignIndentation(source,exact),exact);
+  const repeated='const longEnoughUniqueLookingVariable = 1234567890;';
+  const overlapping=` ${repeated}\n ${repeated}\n ${repeated}`, pair=`${repeated}\n${repeated}`;
+  assert.equal(alignIndentation(overlapping,pair),pair);
 });
 
 test('保护已有入口、任务范围及符号链接，允许小范围编辑', () => {
