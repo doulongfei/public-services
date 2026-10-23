@@ -68,8 +68,8 @@ try{
   await context.close();
  }
  // 使用相同随机数、虚拟时钟和视口，注释/无用文件不会产生视觉差异。
- async function openCheck(old=false,storage=null){
-  const context=await browser.newContext({viewport:{width:900,height:800},deviceScaleFactor:1});
+ async function openCheck(old=false,storage=null,mobile=false){
+  const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:900,height:800},isMobile:mobile,hasTouch:mobile,deviceScaleFactor:1});
   const page=await context.newPage();
   await context.route('**/*',route=>{
    const url=new URL(route.request().url());
@@ -167,7 +167,8 @@ try{
   }finally{await context.close();}
  }
  if(suite.features.includes('wave-feedback')){
-  const {context,page}=await openCheck();
+  for(const mobile of [false,true]){
+  const {context,page}=await openCheck(false,null,mobile);
   try{
    await page.evaluate(()=>{Math.random=()=>.625;});
    await page.getByRole('button',{name:'开始游戏 →',exact:true}).click();
@@ -180,6 +181,7 @@ try{
    assert.ok(state.waveNotice.life>0&&state.waveNotice.text,'Wave notice must carry readable live state');
    assert.equal(await notice.isVisible(),true,'Wave transition must be visible on screen');
    assert.equal((await notice.textContent()).trim(),state.waveNotice.text);
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Wave text must fit the viewport');
    await page.getByRole('button',{name:'暂停游戏',exact:true}).click();
    await page.clock.runFor(32);
    const life=await page.evaluate(()=>window.starharbor.snapshot().waveNotice.life);
@@ -190,6 +192,7 @@ try{
    await page.clock.runFor(64);assert.equal(await notice.isVisible(),true);
    await page.clock.runFor(2500);assert.equal(await notice.isVisible(),false,'Wave notice must expire');
   }finally{await context.close();}
+  }
  }
  if(suite.features.includes('shield')){
   const {context,page}=await openCheck();
