@@ -187,6 +187,8 @@ def save(state):
 
 
 def public_failure(failure):
+    if 'Renderer must not mutate core state' in failure:
+        return '绘制时修改了游戏状态或计时器，候选未通过验收。'
     if 'repeated_tool_error' in failure:
         return '模型连续请求了被禁止的操作，已提前结束本阶段；保留通过验证的源码后重试。'
     if any(word in failure for word in ('acceptance.json', 'Core steps', 'UI property', 'UI phase', 'assertion operator', 'JSON', 'Expecting property')):

@@ -92,6 +92,28 @@ try{
   await page.clock.runFor(32);
   return {context,page};
  }
+ // 直接用真实 Canvas 绘制晚期场景，覆盖正常试玩前几十秒不会进入的分支。
+ // 渲染只读核心状态，不能通过第二套计时器改变预警、护盾或补给寿命。
+ {
+  const {context,page}=await openCheck();
+  try{
+   await page.evaluate(async()=>{
+    const {createState,step,WIDTH,HEIGHT}=await import(new URL('core.js',document.baseURI).href);
+    const {render}=await import(new URL('render.js',document.baseURI).href);
+    const playing=createState();playing.phase='playing';playing.time=120;playing.spawn=0;
+    step(playing,.02,{},()=>.5);
+    if('damageFlash' in playing)playing.damageFlash=.2;
+    if(Array.isArray(playing.pickups))playing.pickups.push({kind:'health',x:450,y:300,r:8,life:2});
+    if(playing.shield)Object.assign(playing.shield,{active:1,cooldown:2});
+    const paused=structuredClone(playing);paused.phase='paused';
+    for(const state of [createState(),playing,paused]){
+     const canvas=document.createElement('canvas');canvas.width=WIDTH;canvas.height=HEIGHT;
+     const before=JSON.stringify(state);render(canvas.getContext('2d'),state);
+     if(JSON.stringify(state)!==before)throw Error('Renderer must not mutate core state: '+state.phase);
+    }
+   });
+  }finally{await context.close();}
+ }
  async function readChecks(checks,old=false){
   const results=new Map();
   for(const phase of ['ready','playing','paused']){

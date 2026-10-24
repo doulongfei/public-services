@@ -126,6 +126,7 @@ class Workflow(unittest.TestCase):
         self.assertIn('8 次回合',self.runner.public_failure(str(error.exception)))
         self.assertIn('固定验证',self.runner.public_failure('Assertion failed\nℹ cancelled 0\nNode.js v24'))
         self.assertIn('Elite telegraph',self.runner.public_failure('AssertionError [ERR_ASSERTION]: Elite telegraph must count down in core.step and expire\nstack'))
+        self.assertIn('绘制时修改',self.runner.public_failure('page.evaluate: Error: Renderer must not mutate core state: playing'))
 
     def run_failed_attempt(self, error):
         def halt_wait(*_): self.runner.HALT = True
