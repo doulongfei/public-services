@@ -310,6 +310,7 @@ def agent_usage(logfile):
 
 def parse_agent_log(logfile):
     messages = []; tools = 0; successful_writes = 0; ended = False; limit = None
+    last_tool_error = ''
     for line in logfile.read_text(errors='replace').splitlines():
         try:
             entry = json.loads(line)
@@ -323,6 +324,10 @@ def parse_agent_log(logfile):
             limit = entry.get('reason')
         if entry.get('type') == 'tool_execution_end':
             tools += 1
+            if entry.get('isError'):
+                result = entry.get('result', {})
+                last_tool_error = ('\n'.join(str(item.get('text', '')) for item in result.get('content', []) if isinstance(item, dict))
+                                   if isinstance(result, dict) else str(result))[:1000]
             if entry.get('toolName') in ('edit', 'write') and entry.get('isError') is False:
                 successful_writes += 1
         if entry.get('type') == 'message_end' and entry.get('message', {}).get('role') == 'assistant':
@@ -330,7 +335,7 @@ def parse_agent_log(logfile):
     if not ended or not messages:
         raise ModelIncomplete('Pi did not emit agent_end and a final assistant message')
     if limit:
-        raise ModelIncomplete('Stage budget exhausted: ' + limit)
+        raise ModelIncomplete('Stage budget exhausted: ' + limit + ('; last tool error: '+last_tool_error if last_tool_error else ''))
     final = messages[-1]
     if final.get('stopReason') != 'stop':
         error = 'Model did not finish normally: ' + str(final.get('stopReason'))
@@ -341,7 +346,7 @@ def parse_agent_log(logfile):
             raise InfrastructureFailure(error + ': ' + detail)
         raise ModelIncomplete(error)
     if not successful_writes:
-        raise ModelIncomplete('No successful source edit/write tool call')
+        raise ModelIncomplete('No successful source edit/write tool call' + ('; last tool error: '+last_tool_error if last_tool_error else ''))
     summary = '\n'.join(item.get('text', '') for item in final.get('content', []) if item.get('type') == 'text')[-350:]
     return summary, sum(m.get('usage', {}).get('totalTokens', 0) for m in messages), tools
 

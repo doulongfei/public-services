@@ -107,6 +107,17 @@ class Workflow(unittest.TestCase):
         p.write_text(json.dumps({'type': 'tool_execution_end', 'toolName': 'edit', 'isError': True})+'\n'+p.read_text())
         self.assertEqual(self.runner.parse_agent_log(p)[2], 2)
 
+    def test_rejected_tool_reason_reaches_next_attempt_instead_of_being_lost(self):
+        p=self.write_log(successful=False)
+        error={'type':'tool_execution_end','toolName':'write','isError':True,
+               'result':{'content':[{'type':'text','text':'Acceptance JSON rejected before writing: checks must contain 1-4 checks.'}]}}
+        p.write_text(json.dumps(error)+'\n'+p.read_text())
+        with self.assertRaisesRegex(self.runner.ModelIncomplete,'checks must contain 1-4'):
+            self.runner.parse_agent_log(p)
+        p.write_text(json.dumps({'type':'guard_limit','reason':'repeated_tool_error'})+'\n'+p.read_text())
+        with self.assertRaisesRegex(self.runner.ModelIncomplete,'last tool error: Acceptance JSON rejected'):
+            self.runner.parse_agent_log(p)
+
     def test_guard_limit_surfaces_the_actual_retry_reason(self):
         p=self.write_log(reason='error')
         p.write_text(json.dumps({'type':'guard_limit','reason':'model_turns','limit':8})+'\n'+p.read_text())
