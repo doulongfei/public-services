@@ -62,6 +62,26 @@ for(const feature of suite.features){
   const s=playing();s.time=120;s.spawn=0;step(s,.02,{},()=>.5);
   const boss=s.enemies.find(e=>e.isBoss);
   assert.ok(boss&&boss.hp>1&&boss.r>11&&Number.isFinite(boss.telegraph),'Late wave must spawn a telegraphed elite');
+  assert.ok(boss.telegraph>0&&boss.telegraph<=10,'Elite warning must have a short positive duration');
+  boss.x=s.player.x;boss.y=s.player.y;boss.speed=0;s.enemies=[boss];s.shot=999;s.spawn=999;s.bullets=[];
+  step(s,.02,{});assert.equal(s.hp,100,'Elite warning must prevent contact damage');
+  // 固定次数由初始预警决定，不能随模型的计时字段不断延长。
+  const warningSteps=Math.ceil((boss.telegraph+1)/.05)+1;
+  for(let i=0;i<warningSteps;i++)step(s,.05,{});
+  assert.ok(boss.telegraph<=0,'Elite telegraph must count down in core.step and expire');
+  assert.ok(s.hp<100,'Elite must become able to damage after the warning');
+  const mobs=playing();mobs.time=120;mobs.spawn=0;step(mobs,.02,{},()=>.5);
+  mobs.enemies=[];mobs.spawn=0;step(mobs,.02,{},()=>.5);
+  assert.ok(mobs.enemies.some(e=>!e.isBoss),'Normal enemy spawning must continue after an elite appears');
+  const combat=playing(),target={x:100,y:100,r:16,hp:3,speed:0,isBoss:true,telegraph:0,kind:'elite'};
+  combat.enemies=[target];
+  for(let hp=2;hp>=0;hp--){
+   combat.bullets=[{x:100,y:100,vx:0,vy:0,life:1}];step(combat,.02,{});
+   assert.equal(target.hp,hp,'Elite HP must decrease on each bullet hit');
+   assert.equal(combat.enemies.length,hp?1:0,'Elite must survive partial damage and be removed when defeated');
+  }
+  assert.ok(combat.score>0,'Defeating an elite must award score');
+  assert.equal(combat.wave,1,'Elite rewards must preserve time-based wave progression');
  }
  if(feature==='shield'){
   const s=playing();assert.ok(s.shield,'Expose shield active/cooldown state');

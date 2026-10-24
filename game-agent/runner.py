@@ -210,6 +210,9 @@ def public_failure(failure):
         return '本轮因控制指令、截止时间或资源预算中止，未发布。'
     if 'Pi exited' in failure or 'Pi did not' in failure:
         return '模型客户端运行未正常完成，未发布；运行器将重试。'
+    assertion = re.search(r'AssertionError(?:\s*\[[^\]]+\])?:\s*([^\n]+)', failure)
+    if assertion:
+        return '固定回归未通过：'+assertion.group(1)[:180]
     return '候选版本未通过固定验证，继续保留上一版，并把具体错误交给下轮修复。'
 
 
@@ -461,7 +464,7 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
     if cp['task']=='shield' and files==['core.js']:
         text += 'Existing hit-feedback tests trigger ordinary collision with no shield input. Preserve damageFlash for unshielded hits. Only input.shield activates the shield.\n'
     if cp['task']=='boss' and files==['core.js']:
-        text += 'The next spawn at time=120 must be an elite. Decrement telegraph in step() and suppress collision damage while telegraph>0. Bullet hits should subtract HP instead of unconditionally killing an elite. Preserve normal/scout behavior.\n'
+        text += 'The next spawn at time=120 must be an elite. Decrement EACH elite enemy.telegraph in step() to zero; a separate global timer does not expire enemy.telegraph. During warning it cannot deal contact damage; after warning it must be able to deal damage. Bullet hits subtract HP and defeat it only at zero. Keep the ORIGINAL normal spawn condition and schedule: a boss must never disable normal/scout spawns. Store any new flags in createState(). Preserve time-based waves.\n'
     for name in files:
         content = (candidate/'game'/name).read_text()
         limit = 14000 // len(files)
@@ -534,6 +537,14 @@ def generate(cfg, cp, candidate, source, round_dir, state):
             validate_runtime(cfg, candidate, source, round_dir/f'stage-{index}',
                              {'checks': approved['checks']+[check], 'new_checks': [check],
                               'features': sorted(set(approved['features']+[cp['task']]))}, core_only=True)
+        elif index < len(stages)-1:
+            # 三阶段任务的操作层也必须验收，不能把它的错误留给末尾渲染层重试。
+            approved = load(BASE/'contracts.json', {'checks': [], 'features': []})
+            check = PLANS[cp['task']][2]
+            state['phase'] = 'testing'; save(state)
+            validate_runtime(cfg, candidate, source, round_dir/f'stage-{index}',
+                             {'checks': approved['checks']+[check], 'new_checks': [check],
+                              'features': sorted(set(approved['features']+[cp['task']]))})
         results[str(index)] = {'summary': summary, 'tools': tools}
         cp['generation_step'] = index+1
         cp.pop('error', None)

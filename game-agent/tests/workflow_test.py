@@ -125,6 +125,7 @@ class Workflow(unittest.TestCase):
             self.runner.parse_agent_log(p)
         self.assertIn('8 次回合',self.runner.public_failure(str(error.exception)))
         self.assertIn('固定验证',self.runner.public_failure('Assertion failed\nℹ cancelled 0\nNode.js v24'))
+        self.assertIn('Elite telegraph',self.runner.public_failure('AssertionError [ERR_ASSERTION]: Elite telegraph must count down in core.step and expire\nstack'))
 
     def run_failed_attempt(self, error):
         def halt_wait(*_): self.runner.HALT = True
@@ -272,6 +273,25 @@ class Workflow(unittest.TestCase):
                 self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
         self.assertEqual(agent.call_count,1)
         self.assertEqual(cp.get('generation_step',0),0)
+
+    def test_broken_middle_controls_do_not_get_checkpointed_as_verified(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        cp={'task':'shield','cursor':11,'stage':'generating'}
+        state={**self.state,'current_task':'shield'};calls=[]
+        def agent(_cfg,_candidate,_prompt,_log,_state,files):
+            calls.append(tuple(files));return 'done',0,1
+        def validate(*args,**kwargs):
+            calls.append('core-check' if kwargs.get('core_only') else 'controls-check')
+            if not kwargs.get('core_only'):
+                self.assertIn('shield',args[4]['features'])
+                raise ValueError('Shield controls broke retained UI')
+        with patch.object(self.runner,'run_agent',side_effect=agent),patch.object(self.runner,'validate_runtime',side_effect=validate):
+            with self.assertRaisesRegex(ValueError,'controls broke'):
+                self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
+        self.assertEqual(calls,[('core.js',),'core-check',('main.js',),'controls-check'])
+        self.assertEqual(cp['generation_step'],1)
+        self.assertEqual(cp['stage_results']['0']['summary'],'done')
 
     def test_task_prompt_includes_current_source_and_only_matching_contract(self):
         cp = {'cursor': 2, 'task': 'enemy-types'}
