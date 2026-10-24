@@ -7,6 +7,22 @@ const core=await import(root+'/core.js'),old=await import(oldRoot+'/core.js');
 const {createState,step}=core;
 const playing=()=>Object.assign(createState(),{phase:'playing',spawn:999,shot:999});
 for(const feature of suite.features){
+ if(feature==='difficulty'){
+  for(const seed of [.1,.5]){
+   const s=playing();s.time=1000;s.spawn=0;step(s,.02,{},()=>seed);
+   assert.ok(s.enemies.length>0,'Late waves must still spawn enemies');
+   assert.ok(s.enemies.every(e=>Number.isFinite(e.speed)&&e.speed>0&&e.speed<=220),'Late enemy speed must be capped');
+   assert.ok(s.spawn>=.35,'Late spawn interval must remain fair');
+  }
+ }
+ if(feature==='performance'){
+  const s=playing();
+  const bullet=(x,y,vx=0,vy=0,life=2)=>({x,y,vx,vy,life});
+  s.bullets=[bullet(-100,100),bullet(100,-100),bullet(1000,100),bullet(100,700),bullet(100,100),bullet(150,100,0,0,.001)];
+  step(s,.02,{});
+  assert.equal(s.bullets.length,1,'Offscreen and expired bullets must be removed, live in-bounds bullets retained');
+  assert.equal(s.bullets[0].x,100);
+ }
  if(feature==='enemy-types'){
   const s=playing(),types=new Map();
   for(let i=0;i<40;i++){

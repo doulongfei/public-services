@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import guard, {checkFile, alignIndentation} from '../guard.mjs';
+import guard, {checkFile, alignIndentation, acceptanceError} from '../guard.mjs';
 
 test('第 22/24 轮的缩进差异只在唯一匹配时对齐，不猜测代码内容', () => {
   const source=" const secs=1;document.querySelector('#wave').textContent=`第 ${state.wave} 波`;\n if(state.phase==='over' && overlay.hidden){overlay.hidden=false;}";
@@ -64,4 +64,36 @@ test('波次页面只允许两个插入点，禁止重复递减核心计时和�
     const removed=event('showNotice();');removed.input.edits[0].newText='deleted';
     assert.equal(checkFile(removed,root,['game/main.js'],anchors).block,true);
   } finally {fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('提前拒绝最近失败的步骤数组、过量用例、虚构选择器及错误 UI 字段', () => {
+  const check={kind:'core',path:'hp',steps:1,op:'gt',value:0};
+  const encode=checks=>JSON.stringify({task:'self-review',checks});
+  assert.equal(acceptanceError(encode([check]),'self-review'),null);
+  assert.match(acceptanceError(encode([{...check,steps:[{action:'click'}]}]),'self-review'),/INTEGER/);
+  assert.match(acceptanceError(encode(Array(6).fill(check)),'self-review'),/1-4/);
+  assert.match(acceptanceError(encode([{kind:'ui',selector:'#id',property:'text',op:'exists'}]),'self-review'),/placeholder/);
+  assert.match(acceptanceError(encode([{kind:'ui',selector:'#arena',property:'style',op:'exists'}]),'self-review'),/property/);
+  assert.match(acceptanceError('{oops','self-review'),/valid JSON/);
+  assert.match(acceptanceError(encode([check]),'onboarding'),/task/);
+});
+
+test('验收阶段源码只读，非法声明不能落盘', () => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'starharbor-metadata-'));
+  try{
+    fs.mkdirSync(root+'/game');fs.writeFileSync(root+'/game/core.js','const a=1;');
+    const options={task:'self-review',readFiles:['game/core.js']},files=['game/acceptance.json'];
+    assert.equal(checkFile({toolName:'read',input:{path:'game/core.js'}},root,files,[],options),undefined);
+    assert.equal(checkFile({toolName:'edit',input:{path:'game/core.js'}},root,files,[],options).block,true);
+    const event={toolName:'write',input:{path:'game/acceptance.json',content:'{"task":"self-review","checks":[]}'}};
+    assert.equal(checkFile(event,root,files,[],options).block,true);
+    assert.equal(fs.existsSync(root+'/game/acceptance.json'),false);
+  }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('连续三次无效工具请求提前终止，避免重复读文件耗尽半小时', async () => {
+  const handlers={};let aborted=0;
+  guard({on:(event,callback)=>{handlers[event]=callback;}});
+  for(let i=0;i<3;i++)await handlers.tool_call({toolName:'read',input:{path:'/workspace/forbidden'}},{abort:()=>aborted++});
+  assert.equal(aborted,1);
 });

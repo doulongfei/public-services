@@ -108,7 +108,7 @@ try{
      const element=page.locator(check.selector),key=JSON.stringify(check);
      if(check.kind==='visual')results.set(key,{image:await element.screenshot({animations:'disabled'})});
      else{
-      const value=check.property==='visible'?await element.isVisible():(await element.count()?await element.textContent():null);
+      const value=check.property==='visible'?await element.isVisible():(await element.count()?(check.property==='attribute'?await element.getAttribute(check.attribute):await element.textContent()):null);
       try{checkValue(value,check);results.set(key,{passed:true});}
       catch(error){results.set(key,{passed:false,error});}
      }
@@ -128,6 +128,27 @@ try{
   }else if(!previous.passed)evidence.push(check);
  }
  if(suite.new_checks.length)assert.ok(evidence.length,'No new acceptance check fails on the published baseline; comments/unused changes are not a release');
+ if(suite.features.includes('accessibility')){
+  const {context,page}=await openCheck();
+  try{
+   await page.getByRole('button',{name:'开始游戏 →',exact:true}).click();await page.clock.runFor(32);
+   assert.equal(await page.locator('#arena').getAttribute('tabindex'),'0','Arena must support keyboard focus');
+   assert.ok(await page.locator('#arena').getAttribute('aria-label'),'Arena must have accessible instructions');
+   assert.ok(await page.locator('#arena').evaluate(el=>document.activeElement===el),'Starting must move focus into the arena');
+   await page.keyboard.press('Escape');await page.clock.runFor(32);
+   assert.equal(await page.evaluate(()=>window.starharbor.snapshot().phase),'paused','Escape must pause');
+   await page.keyboard.press('p');await page.clock.runFor(32);
+   assert.equal(await page.evaluate(()=>window.starharbor.snapshot().phase),'playing','P must still resume');
+  }finally{await context.close();}
+ }
+ if(suite.features.includes('onboarding')){
+  const {context,page}=await openCheck();
+  try{
+   const guide=page.locator('#flight-guide');assert.ok(await guide.isVisible(),'Instructions must be visible before starting');
+   const text=await guide.textContent();
+   for(const term of ['15','30','P','补给'])assert.ok(text.includes(term),'Instructions must explain '+term);
+  }finally{await context.close();}
+ }
  if(suite.features.includes('best-score')){
   for(const storage of ['12345','invalid','blocked']){
    const {context,page}=await openCheck(false,storage);

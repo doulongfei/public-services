@@ -16,14 +16,20 @@ export function alignIndentation(content, oldText) {
 }
 
 // 只允许修改当前任务的少量文件；完整覆盖只用于验收声明和新文件。
-export function checkFile(event, root, files, anchors=[]) {
+export function checkFile(event, root, files, anchors=[], options={}) {
   const target = path.resolve(root, event.input.path ?? '');
   const relative = path.relative(root, target);
-  if (!files.includes(relative)) return {block: true, reason: 'Only the files listed in the task are allowed. Their current source is already in the prompt.'};
+  const readable = event.toolName === 'read' && (options.readFiles || []).includes(relative);
+  if (!files.includes(relative) && !readable) return {block: true, reason: 'Only the files listed in this stage are writable. Their current source or actual diff is already in the prompt.'};
   const existing = fs.existsSync(target) ? target : path.dirname(target);
   if (!fs.realpathSync(existing).startsWith(root + path.sep)) return {block: true, reason: 'Path escapes workspace.'};
   if (event.toolName === 'write' && fs.existsSync(target) && !['game/acceptance.json', 'NOTES.md'].includes(relative)) {
     return {block: true, reason: 'Use edit on existing source. Replacing the complete file with write is forbidden.'};
+  }
+  if (relative === 'game/acceptance.json' && options.task && event.toolName !== 'read') {
+    if (event.toolName !== 'write') return {block:true,reason:'Use ONE write call for the complete acceptance JSON object.'};
+    const reason = acceptanceError(event.input.content, options.task);
+    if (reason) return {block:true,reason:'Acceptance JSON rejected before writing: '+reason};
   }
   if (event.toolName === 'edit') {
     // Pi 1.3 的真实参数是 edits[]，兼容旧版的顶层字段，逐块检查。
@@ -56,10 +62,37 @@ export function checkFile(event, root, files, anchors=[]) {
   return undefined;
 }
 
+// 提前返回常见格式错误；最终安全与场景边界仍由受信任的 acceptance.py 校验。
+export function acceptanceError(content, task) {
+  let data;
+  try {data=JSON.parse(content);} catch {return 'Use valid JSON, with double-quoted keys and no comments or Markdown.';}
+  if (!data || data.task!==task) return 'task must equal '+task;
+  if (!Array.isArray(data.checks) || data.checks.length<1 || data.checks.length>4) return 'checks must contain 1-4 checks.';
+  for (const c of data.checks) {
+    if (!c || !['core','ui','visual'].includes(c.kind)) return 'kind must be core, ui or visual.';
+    if (c.kind==='visual') {
+      if (c.selector!=='#arena') return 'Visual selector must be #arena.';
+      continue;
+    }
+    if (!['eq','gt','gte','lt','lte','contains','exists'].includes(c.op)) return 'Unsupported operator.';
+    if (c.kind==='core') {
+      if (c.steps!==undefined && (!Number.isInteger(c.steps)||c.steps<1||c.steps>4000)) return 'Core steps is an INTEGER from 1 to 4000, not a list of actions.';
+      if (typeof c.path!=='string' || !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+){0,5}$/.test(c.path) || c.path.split('.').some(k=>['__proto__','prototype','constructor'].includes(k))) return 'Use an actual safe state field path.';
+    } else {
+      if (!/^#[a-zA-Z][a-zA-Z0-9_-]{0,48}$/.test(c.selector||'') || c.selector==='#id') return 'Use ONE actual element ID from the source; never a placeholder.';
+      if (!['ready','playing','paused'].includes(c.phase||'ready')) return 'UI phase must be ready, playing or paused.';
+      if (!['text','visible','attribute'].includes(c.property)) return 'UI property must be text, visible or attribute.';
+      if (c.property==='attribute'&&!['aria-label','aria-describedby','tabindex','role','title'].includes(c.attribute)) return 'Unsupported UI attribute.';
+    }
+  }
+  return null;
+}
+
 export default function guard(pi) {
   const files = JSON.parse(process.env.STARHARBOR_FILES || '[]');
   const anchors = JSON.parse(process.env.STARHARBOR_INSERT_ANCHORS || '[]');
-  let calls = 0, turns = 0, reads = 0;
+  const options = {task:process.env.STARHARBOR_TASK,readFiles:JSON.parse(process.env.STARHARBOR_READ_FILES||'[]')};
+  let calls = 0, turns = 0, reads = 0, blocked = 0;
   pi.on('turn_start', async (event, ctx) => {
     // Pi 内部重试会重新从 turnIndex=0 开始，预算必须跨 agent_start 累计。
     if (++turns > 8) {
@@ -73,7 +106,14 @@ export default function guard(pi) {
       ctx.abort(); return {block: true, reason: 'Round tool budget exhausted.'};
     }
     if (!['read', 'edit', 'write'].includes(event.toolName)) return {block: true, reason: 'Only file tools are permitted.'};
-    if (event.toolName === 'read' && ++reads > 2) return {block: true, reason: 'Read budget reached. Source is in the prompt: edit it now, then finish with a short summary.'};
-    return checkFile(event, '/workspace', files, anchors);
+    const result = event.toolName === 'read' && ++reads > 2
+      ? {block:true,reason:'Read budget reached. Source/diff is in the prompt: make the requested edit/write and finish.'}
+      : checkFile(event, '/workspace', files, anchors, options);
+    blocked = result?.block ? blocked+1 : 0;
+    if (blocked>=3) {
+      process.stderr.write(JSON.stringify({type:'guard_limit',reason:'repeated_tool_error',limit:3})+'\n');
+      ctx.abort();
+    }
+    return result;
   });
 }

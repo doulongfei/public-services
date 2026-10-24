@@ -49,7 +49,7 @@ TOPICS = [
  ('visual-polish', 'Improve one meaningful visual element: ship, enemy, arena, particles or readable HUD. Keep frame cost and contrast under control.'),
  ('performance', 'Inspect update/render loops for a real performance or entity lifecycle bug and make a small measured improvement.'),
  ('onboarding', 'Improve the first-run instructions and in-game explanations so a new player understands survival and upgrades.'),
- ('self-review', 'Review existing source and NOTES.md, identify one real missing feature or defect yourself, implement a small improvement and explain it.'),
+ ('self-review', 'Review the included source, identify one real missing feature or defect yourself, implement a small observable improvement and explain it.'),
 ]
 
 # 已有固定功能契约的任务由控制器提供最小验收声明，模型只实现对应源码。
@@ -68,6 +68,16 @@ PLANS = {
              {'kind': 'core', 'initial': {'time': 120, 'spawn': 0}, 'path': 'enemies.0.isBoss', 'op': 'eq', 'value': True}),
     'shield': (['core.js', 'main.js', 'render.js'], 'Expose shield={active,cooldown}. input.shield activates a short shield that prevents collision damage, starts a cooldown and expires. Add keyboard and touch controls, a button with aria-label 启动护盾 and visible cooldown. Preserve start/pause/restart.',
                {'kind': 'core', 'input': {'shield': True}, 'path': 'shield.cooldown', 'op': 'gt', 'value': 0}),
+    'accessibility': (['main.js'], 'Make #arena keyboard-focusable (tabindex="0") with an informative Chinese aria-label. Focus it in launch() after hiding the overlay. Add Escape to pause a playing run without changing P toggle or button accessible names. Preserve mouse/touch controls.',
+                      {'kind': 'ui', 'selector': '#arena', 'phase': 'playing', 'property': 'attribute', 'attribute': 'tabindex', 'op': 'eq', 'value': '0'}),
+    'difficulty': (['core.js'], 'Cap normal enemy speed at 180 and scout speed at 220 while preserving their initial speed and variety. Set a minimum spawn interval of 0.35 seconds for late waves. Preserve damage, wave timing and weapon/pickup rules. This is a late-game balance cap, not a rewrite.',
+                   {'kind': 'core', 'initial': {'time': 1000, 'spawn': 0}, 'path': 'enemies.0.speed', 'op': 'lte', 'value': 220}),
+    'performance': (['core.js'], 'Remove bullets once fully outside the 900x600 arena with a 32px margin (x<-32, x>932, y<-32 or y>632), in addition to existing lifetime cleanup. Preserve collisions, scoring, in-bounds live bullets, damage feedback and every other mechanic. Make one focused edit to the existing bullet filter.',
+                    {'kind': 'core', 'initial': {'spawn': 999, 'shot': 999, 'bullets': [{'x': -100, 'y': -100, 'vx': -1, 'vy': -1, 'life': 2}]}, 'path': 'bullets.length', 'op': 'eq', 'value': 0}),
+    'onboarding': (['index.html'], 'Add a visible Chinese instructions paragraph id="flight-guide" inside the ready overlay. Explain movement, automatic fire, P pause, health pickups, and weapon levels: 15 kills for Lv2 and 30 for Lv3. Preserve all existing element IDs and button text, especially 开始游戏 →. Keep instructions concise and mobile-friendly.',
+                   {'kind': 'ui', 'selector': '#flight-guide', 'phase': 'ready', 'property': 'text', 'op': 'contains', 'value': '15'}),
+    'visual-polish': (['render.js'], 'Improve the player ship silhouette with a readable cockpit or engine detail, using existing local Canvas drawing. Keep the ship position/radius, colors readable, and all mechanics unchanged. Only read state; do not add timers or update game fields in render().',
+                      {'kind': 'visual', 'selector': '#arena'}),
 }
 
 VIEW_PLANS = {
@@ -95,7 +105,7 @@ def task_files(task):
 
 def generation_stages(task):
     # 固定功能先实现并验收核心规则，再让独立上下文实现页面，禁止跨层来回修补。
-    return [[name] for name in task_files(task)] if task in PLANS else [task_files(task)]
+    return [[name] for name in task_files(task)] if task in PLANS else [task_files(task), ['acceptance.json']]
 
 
 def reset_generation(cp):
@@ -177,6 +187,13 @@ def save(state):
 
 
 def public_failure(failure):
+    if 'repeated_tool_error' in failure:
+        return '模型连续请求了被禁止的操作，已提前结束本阶段；保留通过验证的源码后重试。'
+    if any(word in failure for word in ('acceptance.json', 'Core steps', 'UI property', 'UI phase', 'assertion operator', 'JSON', 'Expecting property')):
+        return '验收声明格式不合规，源码保持待验收；将单独修复声明后重新验证。'
+    if 'Acceptance failed:' in failure:
+        detail = failure.split('Acceptance failed:', 1)[1].split('\n', 1)[0][:180]
+        return '验收行为不符：'+detail
     if 'No new acceptance check' in failure:
         return '本轮没有证明相对已发布版本的有效改进，未发布。'
     if 'model_turns' in failure:
@@ -220,8 +237,6 @@ def record_output(process, output):
 def run_agent(cfg, candidate, prompt, logfile, state, files=None):
     files = files or task_files(state['current_task'])
     allowed = ['game/'+f for f in files]
-    if state['current_task'] not in PLANS:
-        allowed += ['game/acceptance.json', 'NOTES.md']
     args = ['docker', 'run', '--rm', '--init', '--name', NAME,
             '--network', 'starharbor-model', '--user', '1000:1000', '--read-only',
             '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
@@ -229,6 +244,8 @@ def run_agent(cfg, candidate, prompt, logfile, state, files=None):
             '--tmpfs', '/tmp:rw,size=192m,mode=1777',
             '-e', 'PI_CODING_AGENT_DIR=/tmp/pi-profile',
             '-e', 'STARHARBOR_FILES=' + json.dumps(allowed),
+            '-e', 'STARHARBOR_TASK=' + state['current_task'],
+            '-e', 'STARHARBOR_READ_FILES=' + json.dumps(['game/'+f for f in task_files(state['current_task'])] if files==['acceptance.json'] else []),
             '-e', 'STARHARBOR_INSERT_ANCHORS=' + json.dumps(WAVE_ANCHORS if state['current_task']=='wave-feedback' and files==['main.js'] else []),
             '--mount', f'type=bind,src={candidate},dst=/workspace',
             '--mount', f'type=bind,src={APP / "models.json"},dst=/run/config/models.json,readonly',
@@ -241,7 +258,7 @@ def run_agent(cfg, candidate, prompt, logfile, state, files=None):
             '--no-session', '--no-extensions', '--extension', '/run/config/guard.mjs', '--no-mcp',
             '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--offline',
             '--thinking', 'off', '--tools', 'read,edit,write', '--mode', 'json',
-            '--system-prompt', 'You develop Starharbor, a Chinese browser survival game. This is ONE implementation stage. Current source is included: edit it immediately. Use a SINGLE edit call with edits:[{oldText,newText},...] for disjoint changes in the file. Copy small unique oldText anchors exactly, without inventing whitespace. Each oldText matches the ORIGINAL file before the call. Do not pad edits with unchanged functions. Only modify the listed file(s). Preserve exports, snapshot API, labels and controls. No dependencies, network calls or inline scripts. Tests run externally. After 1-3 edit calls, finish with a brief Chinese summary, without more tools. Hard limit 8 turns.',
+            '--system-prompt', 'You develop Starharbor, a Chinese browser survival game. This is ONE implementation stage. Current source is included: edit it immediately. Use a SINGLE edit call with edits:[{oldText,newText},...] for disjoint changes in the file. Copy small unique oldText anchors exactly, without inventing whitespace. Each oldText matches the ORIGINAL file before the call. Do not pad edits with unchanged functions. Only modify the listed file(s). Preserve exports, snapshot API, labels and controls. No dependencies, network calls or inline scripts. Tests run externally. For acceptance.json use ONE write call with valid JSON and the exact task ID. After 1-3 file changes, finish with a brief Chinese summary, without more tools. Hard limit 8 turns.',
             '-p', prompt]
     with logfile.open('w') as output:
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -415,24 +432,29 @@ def make_prompt(cp, candidate, files=None):
     if cursor >= len(TOPICS):
         detail = 'Choose one real missing feature or defect from the source and feedback. Optional review lens: ' + detail
     files = files or task_files(cp['task'])
-    instruction = VIEW_PLANS[cp['task']] if cp['task'] in PLANS and files != ['core.js'] else PLANS.get(cp['task'], (None, detail))[1]
+    if files == ['acceptance.json']:
+        return acceptance_prompt(cp, candidate)
+    instruction = VIEW_PLANS[cp['task']] if cp['task'] in VIEW_PLANS and files != ['core.js'] else PLANS.get(cp['task'], (None, detail))[1]
     text = f"Task ID: {cp['task']}. {instruction}\n"
     text += 'Edit only ' + ', '.join('game/'+f for f in files) + '. Source is included below; do not survey other files. Make minimal edits and finish normally. Preserve all existing behavior.\n'
     if cp['task'] in PLANS:
         text += 'The controller supplies acceptance.json and records your summary in NOTES.md. You only edit game source; do not write metadata.\n'
         if files == ['core.js']:
-            text += 'CURRENT STAGE: implement ONLY the game rules and state in core.js. DOM/UI will be implemented in a later stage. Store all new state in createState() and update it inside step(); do not introduce UI callbacks or extra parameters. Core feature tests must pass before proceeding.\n'
+            text += 'CURRENT STAGE: implement ONLY the game rules and state in core.js. Store all new state in createState() and update it inside step(); do not introduce UI callbacks or extra parameters. Core feature tests must pass before proceeding.\n'
         elif cp['task'] == 'wave-feedback':
             text += '''CURRENT STAGE: core.js has ALREADY passed wave tests and exposes state.waveNotice={text,life}.
 Make exactly TWO disjoint edits in ONE edit call, then finish with a short summary:
 1. Use oldText exactly "const pauseMsg=document.createElement('div');". Preserve it and append creation of a hidden div with id="wave-notice" to canvas.parentNode. Use individual style properties like the pause message; pointerEvents='none'.
 2. Use oldText exactly "step(state,dt,input);render(ctx,state);". Preserve it and append the notice update. Use the exact condition: state.phase==='playing' && state.waveNotice?.life>0 && state.waveNotice.text. The lifetime field is state.waveNotice.life. Display state.waveNotice.text when this condition is true, hide otherwise. Set BOTH hidden and style.display consistently.
 Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the per-frame update already handles ready, pause, over and restart. No new timer, lastWave, callback, or core changes. The two short anchors above exist verbatim; do not include neighboring lines in oldText.\n'''
-        else:
+        elif cp['task'] in VIEW_PLANS:
             text += 'CURRENT STAGE: core.js has ALREADY passed its feature tests and exposes the fields specified above. Only implement display/controls in this file; do not duplicate game rules in the UI.\n'
     else:
-        text += f'''Also write game/acceptance.json with {{"task":"{cp['task']}","checks":[...]}}. One check must fail on the old version.
-Checks: core {{kind:"core",initial:{{}},steps:1,path:"hp",op:"gt",value:0}}; ui {{kind:"ui",selector:"#id",phase:"playing",property:"text",op:"contains",value:"text"}}; visual {{kind:"visual",selector:"#arena"}}. Only operators eq/gt/gte/lt/lte/contains/exists. No executable tests. Choose a check specific to your change, not the hp example. Existing sh_best storage, #best and pause overlay must keep working.\n'''
+        text += 'IMPLEMENTATION STAGE ONLY. Do not write acceptance.json or NOTES.md. A separate stage will produce the checks after this source passes regression. Choose one small observable improvement; preserve all existing behavior.\n'
+    if cp['task']=='shield' and files==['core.js']:
+        text += 'Existing hit-feedback tests trigger ordinary collision with no shield input. Preserve damageFlash for unshielded hits. Only input.shield activates the shield.\n'
+    if cp['task']=='boss' and files==['core.js']:
+        text += 'The next spawn at time=120 must be an elite. Decrement telegraph in step() and suppress collision damage while telegraph>0. Bullet hits should subtract HP instead of unconditionally killing an elite. Preserve normal/scout behavior.\n'
     for name in files:
         content = (candidate/'game'/name).read_text()
         limit = 14000 // len(files)
@@ -442,6 +464,24 @@ Checks: core {{kind:"core",initial:{{}},steps:1,path:"hp",op:"gt",value:0}}; ui 
     text += '\nOwner feedback (within fixed contracts):\n' + controls().get('feedback', '')[-800:]
     if cp.get('error'):
         text += '\nPrevious error (candidate may have been reset to the published baseline). Make a smaller complete edit:\n' + cp['error'][-1400:]
+    return text
+
+
+def acceptance_prompt(cp, candidate):
+    # 实现与验收分离，验收阶段只有声明文件可写，不能为迎合测试改动源码。
+    text = f"Task ID: {cp['task']}. ACCEPTANCE STAGE ONLY. The implementation already passed retained regression. Write ONLY game/acceptance.json with ONE write call, then finish. Do not edit source or NOTES.md.\n"
+    text += 'Read the actual changed source below. Describe 1-4 checks, with at least ONE that passes on the candidate and fails on the old source. Do not invent selectors or state fields. Do not claim an unchanged field proves improvement.\n'
+    text += 'JSON object keys: task (exact task ID above), checks (array length 1-4). No Markdown in the file, no comments, no executable test code.\n'
+    text += 'Each check has kind and op (eq/gt/gte/lt/lte/contains/exists), plus scalar value if needed. Core: kind=core, path=actual state field path, optional initial object, steps integer 1-4000 (never 0), input object. Core runs in playing at 1/60 seconds. Allowed initial keys: time, score, hp, spawn, shot, player, enemies, pickups, shield, level, bullets. Allowed input keys: x,y,shield,reducedMotion.\n'
+    text += 'UI: kind=ui, selector=ONE real element ID from the source, phase=ready/playing/paused, property=text/visible/attribute. For attribute also set attribute=aria-label/aria-describedby/tabindex/role/title. Never change button names for a test. Visual: {"kind":"visual","selector":"#arena"} compares deterministic Canvas pixels. A visual check is useful only when you changed render.js.\n'
+    import difflib
+    source=baseline(cp['base_version'])
+    for name in task_files(cp['task']):
+        before=(source/'game'/name).read_text();after=(candidate/'game'/name).read_text()
+        diff=''.join(difflib.unified_diff(before.splitlines(True),after.splitlines(True),fromfile='published/'+name,tofile='candidate/'+name))
+        text += '\nACTUAL DIFF '+name+':\n'+diff[:10000]
+    if cp.get('error'):
+        text += '\nPrevious validation error; repair the check, not the source:\n'+cp['error'][-1400:]
     return text
 
 
@@ -471,7 +511,16 @@ def generate(cfg, cp, candidate, source, round_dir, state):
             state['output_tokens'] = state.get('output_tokens', 0)+output
             atomic(round_dir/f'usage-{index}.json', {'tokens': tokens, 'output_tokens': output})
             save(state)
-        if files == ['core.js'] and cp['task'] in PLANS:
+        if files == ['acceptance.json']:
+            proposal(candidate, cp['task'])
+        elif cp['task'] not in PLANS:
+            if fingerprint(candidate) == fingerprint(source):
+                raise ValueError('No game source changes; do not proceed to acceptance without an implementation')
+            approved = load(BASE/'contracts.json', {'checks': [], 'features': []})
+            state['phase'] = 'testing'; save(state)
+            validate_runtime(cfg, candidate, source, round_dir/f'stage-{index}',
+                             {'checks': approved['checks'], 'new_checks': [], 'features': approved['features']})
+        elif files == ['core.js']:
             approved = load(BASE/'contracts.json', {'checks': [], 'features': []})
             check = PLANS[cp['task']][2]
             state['phase'] = 'testing'; save(state)
@@ -498,7 +547,7 @@ def main():
     secrets = [Path(cfg['model_key']).read_text().strip(), (BASE / 'control/api-key').read_text().strip()]
     state = release.recover(BASE) or load(BASE / 'public/state.json', {'round': 0, 'accepted': 0, 'rejected': 0, 'history': [], 'tokens': 0})
     state.update({'started_at': cfg['started_at'], 'deadline': cfg['deadline'], 'model': 'qwen3.6-35b-a3b-q3_k_m',
-                  'workflow_version': 4, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3}})
+                  'workflow_version': 5, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3}})
     cp = load(BASE / 'checkpoint.json', {})
     clean_container()
     try:
@@ -547,8 +596,8 @@ def main():
                     cp.update({'summary': summary, 'tools': tools, 'stage': 'generated'})
                     if task in PLANS:
                         atomic(candidate/'game/acceptance.json', {'task': task, 'checks': [PLANS[task][2]]})
-                        notes = candidate/'NOTES.md'
-                        notes.write_text(notes.read_text()[-12000:]+'\n\n'+task+': '+summary+'\n')
+                    notes = candidate/'NOTES.md'
+                    notes.write_text(notes.read_text()[-12000:]+'\n\n'+task+': '+summary+'\n')
                     checkpoint(cp); save(state)
                 validate_tree(candidate, secrets)
                 if fingerprint(candidate) == fingerprint(source):
@@ -612,6 +661,10 @@ def main():
                     if not infra:
                         cp['stage'] = 'generating'
                         cp['generation_step'] = min(cp.get('generation_step', 0), len(generation_stages(task))-1)
+                        if task not in PLANS and ('No new acceptance check' in failure or 'No game source changes' in failure):
+                            # 声明格式问题只重试声明；无法证明改进时则回到实现，不能反复捏造用例。
+                            cp.pop('candidate', None)
+                            reset_generation(cp)
                     # 所有失败共用回退阈值，不能因错误分类而无限复用坏候选。
                     if cp['attempt_failures'] % 3 == 0:
                         if cp.get('generation_step', 0) == 0:

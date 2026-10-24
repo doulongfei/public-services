@@ -272,6 +272,76 @@ class Workflow(unittest.TestCase):
         from acceptance import validate_check
         for _, _, check in self.runner.PLANS.values(): validate_check(check)
 
+    def test_generic_source_is_validated_before_read_only_acceptance_stage(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        cp={'task':'self-review','cursor':15,'base_version':self.first,'stage':'generating'}
+        state={**self.state,'current_task':'self-review'};calls=[]
+        def agent(_cfg,_candidate,prompt,_log,_state,files):
+            calls.append(tuple(files))
+            if files==['acceptance.json']:
+                self.assertIn('ACTUAL DIFF core.js',prompt)
+                self.assertIn('steps integer 1-4000 (never 0)',prompt)
+                self.assertNotIn('selector:"#id"',prompt)
+                (candidate/'game/acceptance.json').write_text(json.dumps({'task':'self-review','checks':[{'kind':'core','path':'hp','op':'eq','value':90}]}))
+            else:
+                self.assertIn('Do not write acceptance.json',prompt)
+                core=candidate/'game/core.js';core.write_text(core.read_text().replace('hp:100','hp:90'))
+            return 'done',0,1
+        def verify(_cfg,_candidate,_source,_output,suite):
+            calls.append('regression');self.assertEqual(suite['new_checks'],[])
+        with patch.object(self.runner,'run_agent',side_effect=agent),patch.object(self.runner,'validate_runtime',side_effect=verify):
+            self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
+        self.assertEqual(calls,[('core.js','render.js'),'regression',('acceptance.json',)])
+        self.assertEqual(cp['generation_step'],2)
+        self.assertEqual(self.release.current(self.base)['version'],self.first)
+
+    def test_invalid_acceptance_retries_without_regenerating_valid_source(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        core=candidate/'game/core.js';core.write_text(core.read_text()+'\n// already validated\n')
+        cp={'task':'self-review','cursor':15,'base_version':self.first,'generation_step':1,
+            'stage_results':{'0':{'summary':'source passed','tools':1}},'error':'Core steps must be 1-4000'}
+        state={**self.state,'current_task':'self-review'}
+        def metadata(_cfg,_candidate,_prompt,_log,_state,files):
+            self.assertEqual(files,['acceptance.json'])
+            self.assertIn('already validated',core.read_text())
+            (candidate/'game/acceptance.json').write_text(json.dumps({'task':'self-review','checks':[{'kind':'core','path':'hp','steps':0,'op':'gt','value':0}]}))
+            return 'invalid metadata',0,1
+        with patch.object(self.runner,'run_agent',side_effect=metadata),patch.object(self.runner,'validate_runtime') as validator:
+            with self.assertRaisesRegex(ValueError,'Core steps'):
+                self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
+        validator.assert_not_called();self.assertEqual(cp['generation_step'],1)
+
+    def test_unchanged_source_never_reaches_acceptance_stage(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        cp={'task':'self-review','cursor':15,'base_version':self.first}
+        with patch.object(self.runner,'run_agent',return_value=('claimed change',0,1)) as agent,patch.object(self.runner,'validate_runtime') as validator:
+            with self.assertRaisesRegex(ValueError,'No game source changes'):
+                self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,{**self.state,'current_task':'self-review'})
+        self.assertEqual(agent.call_count,1);validator.assert_not_called()
+
+    def test_no_improvement_proof_returns_to_implementation_instead_of_inventing_checks(self):
+        candidate=self.base/'rounds/00000/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        cp={'base_version':self.first,'cursor':15,'next_cursor':16,'task':'self-review',
+            'candidate':'rounds/00000/candidate','stage':'generating','generation_step':1,
+            'stage_results':{'0':{'summary':'source passed regression','tools':1}}}
+        self.release.atomic(self.base/'checkpoint.json',cp)
+        result,state=self.run_failed_attempt(ValueError('No new acceptance check fails on the published baseline'))
+        self.assertNotIn('candidate',result);self.assertEqual(result['generation_step'],0)
+        self.assertEqual(state['accepted'],0)
+
+    def test_accessibility_contract_can_assert_real_dom_attributes(self):
+        from acceptance import validate_check
+        validate_check(self.runner.PLANS['accessibility'][2])
+        with self.assertRaisesRegex(ValueError,'attribute'):
+            validate_check({'kind':'ui','selector':'#arena','property':'attribute','attribute':'onclick','op':'exists'})
+        self.assertEqual(self.runner.generation_stages('accessibility'),[['main.js']])
+        self.assertEqual(self.runner.generation_stages('onboarding'),[['index.html']])
+        self.assertIn('15 kills',self.runner.PLANS['onboarding'][1])
+
     def test_control_interruption_does_not_consume_code_retries(self):
         cp, state = self.run_failed_attempt(self.runner.Cancelled('paused'))
         self.assertEqual(cp['code_failures'], 0)

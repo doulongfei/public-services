@@ -31,12 +31,14 @@ def validate_check(check):
             if check['selector'] != '#arena':
                 raise ValueError('Visual evidence must inspect the actual arena')
             return
-        if check.get('property') not in ('text', 'visible'):
-            raise ValueError('UI property must be text or visible')
+        if check.get('property') not in ('text', 'visible', 'attribute'):
+            raise ValueError('UI property must be text, visible or attribute')
+        if check.get('property') == 'attribute' and check.get('attribute') not in ('aria-label', 'aria-describedby', 'tabindex', 'role', 'title'):
+            raise ValueError('Unsupported UI attribute')
     else:
         initial = check.get('initial', {})
         steps = check.get('steps', 1)
-        if not isinstance(initial, dict) or not set(initial) <= {'time', 'score', 'hp', 'spawn', 'shot', 'player', 'enemies', 'pickups', 'shield', 'level'}:
+        if not isinstance(initial, dict) or not set(initial) <= {'time', 'score', 'hp', 'spawn', 'shot', 'player', 'enemies', 'pickups', 'shield', 'level', 'bullets'}:
             raise ValueError('Unsupported core initial fields')
         if type(steps) is not int or not 1 <= steps <= 4000:
             raise ValueError('Core steps must be 1–4000')
