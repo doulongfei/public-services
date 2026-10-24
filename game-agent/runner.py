@@ -326,8 +326,10 @@ def parse_agent_log(logfile):
             tools += 1
             if entry.get('isError'):
                 result = entry.get('result', {})
-                last_tool_error = ('\n'.join(str(item.get('text', '')) for item in result.get('content', []) if isinstance(item, dict))
-                                   if isinstance(result, dict) else str(result))[:1000]
+                detail = ('\n'.join(str(item.get('text', '')) for item in result.get('content', []) if isinstance(item, dict))
+                          if isinstance(result, dict) else str(result))[:1000]
+                if detail.strip():
+                    last_tool_error = detail
             if entry.get('toolName') in ('edit', 'write') and entry.get('isError') is False:
                 successful_writes += 1
         if entry.get('type') == 'message_end' and entry.get('message', {}).get('role') == 'assistant':
