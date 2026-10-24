@@ -4,7 +4,8 @@ import {coreCheck} from './checks.mjs';
 const suite=JSON.parse(await fs.readFile(process.env.CONTRACT_FILE||'/run/contracts.json','utf8'));
 const root=process.env.GAME_ROOT||'/workspace/game',oldRoot=process.env.BASELINE_ROOT||'/baseline/game';
 const core=await import(root+'/core.js'),old=await import(oldRoot+'/core.js');
-const {createState,step}=core;
+const {createState}=core;
+const step=(state,dt,input={},random=()=>.5)=>core.step(state,dt,input,random);
 const playing=()=>Object.assign(createState(),{phase:'playing',spawn:999,shot:999});
 for(const feature of suite.features){
  if(feature==='difficulty'){

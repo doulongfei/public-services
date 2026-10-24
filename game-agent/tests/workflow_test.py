@@ -353,6 +353,44 @@ class Workflow(unittest.TestCase):
         self.assertEqual(cp['generation_step'],1)
         self.assertEqual(cp['stage_results']['0']['summary'],'done')
 
+    def test_final_core_regression_routes_back_to_core_and_keeps_completed_render(self):
+        self.release.atomic(self.base/'public/state.json',{**self.state,'topic_index':10})
+        def agent(_cfg,candidate,_prompt,_log,_state,files):
+            p=candidate/'game'/files[0];p.write_text(p.read_text()+'\n// completed model change\n');return 'done',0,1
+        def validate(*args,**kwargs):
+            if not kwargs.get('core_only'):
+                self.runner.HALT=True;raise ValueError('test at /harness/core.test.mjs:20: fatal collision regression')
+        with patch.object(self.runner,'run_agent',side_effect=agent),patch.object(self.runner,'validate_runtime',side_effect=validate),patch.object(self.runner,'clean_container'),patch.object(self.runner,'owner_tree'),patch.object(self.runner.shutil,'disk_usage',return_value=SimpleNamespace(free=64*1024**3)):
+            self.runner.main()
+        cp=self.runner.load(self.base/'checkpoint.json')
+        self.assertEqual(cp['generation_step'],0);self.assertNotIn('0',cp['stage_results'])
+        self.assertEqual(cp['stage_results']['1']['completion'],'normal')
+        self.assertEqual(self.release.current(self.base)['version'],self.first)
+
+    def test_core_repair_reuses_unchanged_model_render_and_requires_final_publication_gate(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        render=candidate/'game/render.js';render.write_text(render.read_text()+'\n// generated render\n')
+        cp={'task':'boss','cursor':10,'generation_step':0,'error':'/harness/core.test.mjs failed',
+            'stage_results':{'1':{'summary':'render finished','tools':1,'completion':'normal','source_hashes':self.runner.stage_hashes(candidate,['render.js'])}}}
+        def agent(_cfg,_candidate,_prompt,_log,_state,files):
+            self.assertEqual(files,['core.js']);p=candidate/'game/core.js';p.write_text(p.read_text()+'\n// repaired core\n');return 'core repaired',0,1
+        with patch.object(self.runner,'run_agent',side_effect=agent) as model,patch.object(self.runner,'validate_runtime'):
+            self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,{**self.state,'current_task':'boss'})
+        self.assertEqual(model.call_count,1);self.assertTrue(cp['stage_results']['1']['reused'])
+        self.assertEqual(cp['generation_step'],2);self.assertIn('generated render',render.read_text())
+        self.assertEqual(self.release.current(self.base)['version'],self.first)
+
+    def test_changed_render_hash_is_not_reused(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        cp={'task':'boss','cursor':10,'generation_step':1,
+            'stage_results':{'0':{'summary':'core finished','tools':1},'1':{'summary':'old render','tools':1,'completion':'normal','source_hashes':self.runner.stage_hashes(candidate,['render.js'])}}}
+        render=candidate/'game/render.js';render.write_text(render.read_text()+'\n// unverified change\n')
+        with patch.object(self.runner,'run_agent',return_value=('new render',0,1)) as model,patch.object(self.runner,'validate_runtime'):
+            self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,{**self.state,'current_task':'boss'})
+        model.assert_called_once();self.assertFalse(cp['stage_results']['1']['reused'])
+
     def test_task_prompt_includes_current_source_and_only_matching_contract(self):
         cp = {'cursor': 2, 'task': 'enemy-types'}
         prompt = self.runner.make_prompt(cp, self.base/'history')

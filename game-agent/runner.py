@@ -386,6 +386,7 @@ def validate_runtime(cfg, candidate, baseline, outputs, suite, core_only=False):
     os.chown(outputs, 1000, 1000)
     plan = outputs.parent / 'contracts.json'
     atomic(plan, suite)
+    syntax_files = '/workspace/game/core.js' if core_only else '/workspace/game/*.js'
     args = ['docker', 'run', '--rm', '--init', '--name', TEST_NAME, '--network', 'none', '--user', '1000:1000', '--read-only',
             '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--cpus', '0.75',
             '--memory', '1g', '--memory-swap', '1g', '--pids-limit', '192',
@@ -396,7 +397,7 @@ def validate_runtime(cfg, candidate, baseline, outputs, suite, core_only=False):
             '--mount', f'type=bind,src={plan},dst=/run/contracts.json,readonly',
             '--mount', f'type=bind,src={outputs},dst=/output',
             cfg['runtime_image'],
-            'sh', '-c', 'for f in /workspace/game/*.js; do node --check "$f" || exit 1; done; node --test /harness/core.test.mjs && node /harness/features.mjs' + ('' if core_only else ' && node /harness/browser.mjs')]
+            'sh', '-c', f'for f in {syntax_files}; do node --check "$f" || exit 1; done; node --test /harness/core.test.mjs && node /harness/features.mjs' + ('' if core_only else ' && node /harness/browser.mjs')]
     logfile = outputs / 'tests.txt'
     with logfile.open('w') as output:
         result = subprocess.Popen(args, stdout=output, stderr=subprocess.STDOUT)
@@ -522,6 +523,22 @@ def acceptance_prompt(cp, candidate):
     return text
 
 
+def stage_hashes(candidate, files):
+    return {name:hashlib.sha256((candidate/'game'/name).read_bytes()).hexdigest() for name in files}
+
+
+def failed_generation_step(cp, failure):
+    """按实际失败的固定测试定位文件，不能总把核心回归交给末尾渲染修复。"""
+    stages = generation_stages(cp['task'])
+    syntax = re.search(r'/workspace/game/([a-z0-9_.-]+\.js)(?::|\b)', failure)
+    for index, files in enumerate(stages):
+        if syntax and syntax.group(1) in files:
+            return index
+        if 'core.js' in files and ('core.test.mjs' in failure or (cp['task'] in PLANS and '/harness/features.mjs' in failure)):
+            return index
+    return min(cp.get('generation_step', 0), len(stages)-1)
+
+
 def generate(cfg, cp, candidate, source, round_dir, state):
     stages = generation_stages(cp['task'])
     end = min(time.time()+cfg['round_timeout'], cfg['deadline'])
@@ -538,26 +555,32 @@ def generate(cfg, cp, candidate, source, round_dir, state):
         save(state)
         logfile = round_dir/f'pi-{index}.jsonl'
         remaining = end-time.time()
-        if remaining <= 0:
-            raise ModelIncomplete('Round exceeded time budget between stages')
         before = {name:(candidate/'game'/name).read_bytes() if (candidate/'game'/name).exists() else None for name in files}
+        previous = results.get(str(index), {})
+        reused = files != ['acceptance.json'] and previous.get('completion') in ('normal', 'budget-recovered') and previous.get('source_hashes') == stage_hashes(candidate, files)
+        if remaining <= 0 and not reused:
+            raise ModelIncomplete('Round exceeded time budget between stages')
         completion = 'normal'
-        try:
+        if reused:
+            summary, tools, completion = previous['summary'], previous['tools'], previous['completion']
+            state['phase'] = 'testing'; save(state)
+        else:
             try:
-                summary, _, tools = run_agent({**cfg, 'round_timeout': remaining}, candidate, make_prompt(cp, candidate, files), logfile, state, files=files)
-            except ModelIncomplete:
-                recovered = budget_candidate(logfile, candidate, before) if logfile.exists() else None
-                if recovered is None:
-                    raise
-                validate_tree(candidate, [Path(cfg['model_key']).read_text().strip(), (BASE/'control/api-key').read_text().strip()])
-                summary, tools = recovered
-                completion = 'budget-recovered'
-        finally:
-            tokens, output = agent_usage(logfile)
-            state['tokens'] += tokens
-            state['output_tokens'] = state.get('output_tokens', 0)+output
-            atomic(round_dir/f'usage-{index}.json', {'tokens': tokens, 'output_tokens': output})
-            save(state)
+                try:
+                    summary, _, tools = run_agent({**cfg, 'round_timeout': remaining}, candidate, make_prompt(cp, candidate, files), logfile, state, files=files)
+                except ModelIncomplete:
+                    recovered = budget_candidate(logfile, candidate, before) if logfile.exists() else None
+                    if recovered is None:
+                        raise
+                    validate_tree(candidate, [Path(cfg['model_key']).read_text().strip(), (BASE/'control/api-key').read_text().strip()])
+                    summary, tools = recovered
+                    completion = 'budget-recovered'
+            finally:
+                tokens, output = agent_usage(logfile)
+                state['tokens'] += tokens
+                state['output_tokens'] = state.get('output_tokens', 0)+output
+                atomic(round_dir/f'usage-{index}.json', {'tokens': tokens, 'output_tokens': output})
+                save(state)
         if files == ['acceptance.json']:
             proposal(candidate, cp['task'])
         elif cp['task'] not in PLANS:
@@ -582,7 +605,8 @@ def generate(cfg, cp, candidate, source, round_dir, state):
             validate_runtime(cfg, candidate, source, round_dir/f'stage-{index}',
                              {'checks': approved['checks']+[check], 'new_checks': [check],
                               'features': sorted(set(approved['features']+[cp['task']]))})
-        results[str(index)] = {'summary': summary, 'tools': tools, 'completion': completion}
+        results[str(index)] = {'summary': summary, 'tools': tools, 'completion': completion,
+                               'source_hashes': stage_hashes(candidate, files), 'reused': bool(reused)}
         cp['generation_step'] = index+1
         cp.pop('error', None)
         checkpoint(cp)
@@ -685,6 +709,7 @@ def main():
                                    'retry_at': time.time()+cfg['cooldown'], 'updated_at': time.time()})
                 event(next_state, {'round': number, 'task': task, 'result': 'accepted', 'version': version[:12],
                                    'summary': summary[:350], 'tool_calls': cp['tools'],
+                                   'reused_stages': [i for i,item in cp.get('stage_results', {}).items() if item.get('reused')],
                                    'budget_recovered': budget_recovered, 'at': time.time()})
                 release.stage(BASE, candidate, release_id, version, next_state,
                               {'checks': suite['checks'], 'features': features}, round_dir / 'output')
@@ -719,7 +744,9 @@ def main():
                     result = 'retrying' if infra or incomplete else 'rejected'
                     if not infra:
                         cp['stage'] = 'generating'
-                        cp['generation_step'] = min(cp.get('generation_step', 0), len(generation_stages(task))-1)
+                        cp['generation_step'] = (min(cp.get('generation_step', 0), len(generation_stages(task))-1)
+                                                 if incomplete else failed_generation_step(cp, failure))
+                        cp.get('stage_results', {}).pop(str(cp['generation_step']), None)
                         if task not in PLANS and ('No new acceptance check' in failure or 'No game source changes' in failure):
                             # 声明格式问题只重试声明；无法证明改进时则回到实现，不能反复捏造用例。
                             cp.pop('candidate', None)

@@ -1,6 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-const {createState,step,WIDTH,HEIGHT}=await import((process.env.GAME_ROOT||'/workspace/game')+'/core.js');
+const core=await import((process.env.GAME_ROOT||'/workspace/game')+'/core.js');
+const {createState,WIDTH,HEIGHT}=core;
+// 固定基础场景的随机输入，极端掉落情况单独显式验证。
+const step=(state,dt,input={},random=()=>.5)=>core.step(state,dt,input,random);
 
 test('ready and paused states do not advance simulation',()=>{
  const s=createState();step(s,.05,{x:1});assert.equal(s.time,0);
@@ -21,6 +24,16 @@ test('collision and game over remain valid',()=>{
  const s=createState();s.phase='playing';s.spawn=999;s.shot=999;s.hp=1;
  s.enemies=[{...s.player,hp:1,speed:0}];step(s,.01,{});
  assert.equal(s.phase,'over');assert.equal(s.hp,0);
+});
+test('fatal collision cannot be undone by same-frame health pickups',()=>{
+ for(const roll of [0,.1,.5,.99]){
+  const s=createState();Object.assign(s,{phase:'playing',spawn:999,shot:999,hp:1});
+  s.enemies=[{...s.player,hp:1,speed:0}];
+  if(Array.isArray(s.pickups))s.pickups.push({kind:'health',x:s.player.x,y:s.player.y,r:8,life:3});
+  step(s,.01,{},()=>roll);
+  assert.equal(s.hp,0,'A lethal hit must remain lethal even when a health pickup overlaps');
+  assert.equal(s.phase,'over','Health collection must not resurrect a defeated player');
+ }
 });
 test('long simulation covers active play with bounded entity counts',()=>{
  let s=createState();s.phase='playing';let elapsed=0;

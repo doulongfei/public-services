@@ -30,6 +30,7 @@ const errors=[],external=[];
 try{
  for(const mobile of [false,true]){
   const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000},isMobile:mobile,hasTouch:mobile,deviceScaleFactor:1});
+  await context.addInitScript(()=>{Math.random=()=>.625;});
   await context.route('**/*',route=>{
    const url=new URL(route.request().url());
    if(url.hostname!=='127.0.0.1'){external.push(url.origin);return route.abort();}
