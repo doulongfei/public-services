@@ -373,6 +373,8 @@ class Workflow(unittest.TestCase):
             if files==['acceptance.json']:
                 self.assertIn('ACTUAL DIFF core.js',prompt)
                 self.assertIn('steps integer 1-4000 (never 0)',prompt)
+                self.assertIn('playing after starting for 64ms',prompt)
+                self.assertIn('omit it for late-only render changes',prompt)
                 self.assertNotIn('selector:"#id"',prompt)
                 (candidate/'game/acceptance.json').write_text(json.dumps({'task':'self-review','checks':[{'kind':'core','path':'hp','op':'eq','value':90}]}))
             else:
