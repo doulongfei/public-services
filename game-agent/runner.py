@@ -356,6 +356,29 @@ def parse_agent_log(logfile):
     return summary, sum(m.get('usage', {}).get('totalTokens', 0) for m in messages), tools
 
 
+def budget_candidate(logfile, candidate, before):
+    """只识别受信任 guard 的预算中止；返回的候选仍必须通过独立验收。"""
+    reason = None; writes = tools = 0
+    for line in logfile.read_text(errors='replace').splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('type') == 'guard_limit':
+            reason = entry.get('reason')
+        if entry.get('type') == 'tool_execution_end':
+            tools += 1
+            if entry.get('toolName') in ('edit', 'write') and entry.get('isError') is False:
+                writes += 1
+    changed = any((candidate/'game'/name).is_file() and (candidate/'game'/name).read_bytes() != original
+                  for name, original in before.items())
+    if reason not in ('model_turns', 'tool_calls', 'repeated_tool_error') or not writes or not changed:
+        return None
+    return '模型达到阶段预算；保留实际写入的候选，由独立回归和改进证明决定是否发布。', tools
+
+
 def validate_runtime(cfg, candidate, baseline, outputs, suite, core_only=False):
     outputs.mkdir(parents=True, exist_ok=True)
     os.chown(outputs, 1000, 1000)
@@ -473,7 +496,7 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
         text += f'\nCURRENT /workspace/game/{name}:\n```\n{content}\n```\n'
     text += '\nOwner feedback (within fixed contracts):\n' + controls().get('feedback', '')[-800:]
     if cp.get('error'):
-        text += '\nPrevious error (candidate may have been reset to the published baseline). Make a smaller complete edit:\n' + cp['error'][-1400:]
+        text += '\nREPAIR ONLY: the included source is the CURRENT candidate. Preserve working parts; fix only the specific failed assertion with the smallest edit. Do not reimplement the whole feature.\nPrevious validation error:\n' + cp['error'][-1400:]
     return text
 
 
@@ -513,8 +536,18 @@ def generate(cfg, cp, candidate, source, round_dir, state):
         remaining = end-time.time()
         if remaining <= 0:
             raise ModelIncomplete('Round exceeded time budget between stages')
+        before = {name:(candidate/'game'/name).read_bytes() if (candidate/'game'/name).exists() else None for name in files}
+        completion = 'normal'
         try:
-            summary, _, tools = run_agent({**cfg, 'round_timeout': remaining}, candidate, make_prompt(cp, candidate, files), logfile, state, files=files)
+            try:
+                summary, _, tools = run_agent({**cfg, 'round_timeout': remaining}, candidate, make_prompt(cp, candidate, files), logfile, state, files=files)
+            except ModelIncomplete:
+                recovered = budget_candidate(logfile, candidate, before) if logfile.exists() else None
+                if recovered is None:
+                    raise
+                validate_tree(candidate, [Path(cfg['model_key']).read_text().strip(), (BASE/'control/api-key').read_text().strip()])
+                summary, tools = recovered
+                completion = 'budget-recovered'
         finally:
             tokens, output = agent_usage(logfile)
             state['tokens'] += tokens
@@ -545,7 +578,7 @@ def generate(cfg, cp, candidate, source, round_dir, state):
             validate_runtime(cfg, candidate, source, round_dir/f'stage-{index}',
                              {'checks': approved['checks']+[check], 'new_checks': [check],
                               'features': sorted(set(approved['features']+[cp['task']]))})
-        results[str(index)] = {'summary': summary, 'tools': tools}
+        results[str(index)] = {'summary': summary, 'tools': tools, 'completion': completion}
         cp['generation_step'] = index+1
         cp.pop('error', None)
         checkpoint(cp)
@@ -635,6 +668,9 @@ def main():
                 summary = cp['summary']
                 if any(secret in summary for secret in secrets):
                     summary = 'Changed game source; private content omitted.'
+                budget_recovered = any(item.get('completion')=='budget-recovered' for item in cp.get('stage_results', {}).values())
+                if budget_recovered:
+                    summary = '预算恢复候选已通过完整验收并发布。'+summary
                 version = release.prepare_commit(BASE, candidate, cp['base_version'], number, task)
                 release_id = f'{number:05d}-{version[:12]}'
                 next_state = json.loads(json.dumps(state))
@@ -644,7 +680,8 @@ def main():
                                    'topic_index': cp.get('next_cursor', cp['cursor']+1), 'phase': 'cooldown', 'failure_count': 0,
                                    'retry_at': time.time()+cfg['cooldown'], 'updated_at': time.time()})
                 event(next_state, {'round': number, 'task': task, 'result': 'accepted', 'version': version[:12],
-                                   'summary': summary[:350], 'tool_calls': cp['tools'], 'at': time.time()})
+                                   'summary': summary[:350], 'tool_calls': cp['tools'],
+                                   'budget_recovered': budget_recovered, 'at': time.time()})
                 release.stage(BASE, candidate, release_id, version, next_state,
                               {'checks': suite['checks'], 'features': features}, round_dir / 'output')
                 state = release.activate(BASE, release_id, lambda: permitted(cfg))

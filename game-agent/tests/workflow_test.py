@@ -274,6 +274,65 @@ class Workflow(unittest.TestCase):
         self.assertEqual(agent.call_count,1)
         self.assertEqual(cp.get('generation_step',0),0)
 
+    def budget_log(self, logfile, writes=True, reason='model_turns'):
+        logfile.write_text('\n'.join(json.dumps(e) for e in [
+            {'type':'guard_limit','reason':reason},
+            {'type':'tool_execution_end','toolName':'edit','isError':not writes}]))
+
+    def test_budget_recovery_requires_authenticated_limit_successful_write_and_changed_file(self):
+        candidate=self.base/'history';name='core.js';p=candidate/'game'/name;original=p.read_bytes()
+        before={name:original};log=self.base/'budget.jsonl'
+        for changed,writes,reason in [(False,True,'model_turns'),(True,False,'model_turns'),(True,True,'provider_error')]:
+            p.write_bytes(original+(b'\n// edit\n' if changed else b''));self.budget_log(log,writes,reason)
+            self.assertIsNone(self.runner.budget_candidate(log,candidate,before))
+        self.budget_log(log);self.assertIsNotNone(self.runner.budget_candidate(log,candidate,before))
+
+    def test_budget_candidate_must_pass_core_contract_before_advancing(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        cp={'task':'wave-feedback','cursor':3};state={**self.state,'current_task':'wave-feedback'};calls=[]
+        def agent(_cfg,_candidate,_prompt,log,_state,files):
+            calls.append(tuple(files))
+            if files==['core.js']:
+                p=candidate/'game/core.js';p.write_text(p.read_text()+'\n// generated edit\n')
+                self.budget_log(log);raise self.runner.ModelIncomplete('Stage budget exhausted: model_turns')
+            return 'UI finished',0,1
+        with patch.object(self.runner,'run_agent',side_effect=agent),patch.object(self.runner,'validate_runtime',side_effect=ValueError('core contract failed')):
+            with self.assertRaisesRegex(ValueError,'core contract failed'):
+                self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
+        self.assertEqual(calls,[('core.js',)]);self.assertNotIn('0',cp['stage_results'])
+        with patch.object(self.runner,'run_agent',side_effect=agent),patch.object(self.runner,'validate_runtime'):
+            self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
+        self.assertEqual(cp['stage_results']['0']['completion'],'budget-recovered')
+        self.assertEqual(cp['stage_results']['1']['completion'],'normal')
+        self.assertEqual(self.release.current(self.base)['version'],self.first)
+
+    def test_owner_cancel_is_never_recovered_even_if_log_contains_budget_marker(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        def cancel(_cfg,_candidate,_prompt,log,_state,files):
+            p=candidate/'game/core.js';p.write_text(p.read_text()+'\n// edit\n');self.budget_log(log)
+            raise self.runner.Cancelled('Round interrupted by owner control')
+        with patch.object(self.runner,'run_agent',side_effect=cancel),patch.object(self.runner,'validate_runtime') as validator:
+            with self.assertRaises(self.runner.Cancelled):
+                self.runner.generate(self.cfg,{'task':'wave-feedback','cursor':3},candidate,self.base/'history',candidate.parent,{**self.state,'current_task':'wave-feedback'})
+        validator.assert_not_called()
+
+    def test_budget_recovery_cannot_publish_when_final_browser_validation_fails(self):
+        self.release.atomic(self.base/'public/state.json',{**self.state,'topic_index':3})
+        def agent(_cfg,candidate,_prompt,log,_state,files):
+            p=candidate/'game'/files[0];p.write_text(p.read_text()+'\n// generated edit\n');self.budget_log(log)
+            raise self.runner.ModelIncomplete('Stage budget exhausted: model_turns')
+        def validate(*args,**kwargs):
+            if not kwargs.get('core_only'):
+                self.runner.HALT=True;raise ValueError('Wave UI not visible')
+        with patch.object(self.runner,'run_agent',side_effect=agent),patch.object(self.runner,'validate_runtime',side_effect=validate),patch.object(self.runner,'clean_container'),patch.object(self.runner,'owner_tree'),patch.object(self.runner.shutil,'disk_usage',return_value=SimpleNamespace(free=64*1024**3)):
+            self.runner.main()
+        state=self.runner.load(self.base/'public/state.json');cp=self.runner.load(self.base/'checkpoint.json')
+        self.assertEqual(state['accepted'],0);self.assertEqual(state['history'][-1]['result'],'rejected')
+        self.assertEqual(cp['generation_step'],1);self.assertEqual(cp['stage_results']['0']['completion'],'budget-recovered')
+        self.assertEqual(self.release.current(self.base)['version'],self.first)
+
     def test_broken_middle_controls_do_not_get_checkpointed_as_verified(self):
         candidate=self.base/'rounds/00001/candidate'
         shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
