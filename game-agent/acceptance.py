@@ -24,6 +24,14 @@ def proposal(candidate, task):
 def validate_check(check):
     if not isinstance(check, dict) or check.get('kind') not in ('core', 'ui', 'visual'):
         raise ValueError('Check kind must be core, ui or visual')
+    fields = {
+        'core': {'kind', 'initial', 'steps', 'input', 'path', 'op', 'value'},
+        'ui': {'kind', 'selector', 'phase', 'property', 'attribute', 'op', 'value'},
+        'visual': {'kind', 'selector', 'phase'},
+    }
+    extra = set(check) - fields[check['kind']]
+    if extra:
+        raise ValueError('Unsupported '+check['kind']+' check fields: '+', '.join(sorted(extra))+'. UI/visual scenes do not simulate custom inputs or actions.')
     if check['kind'] in ('ui', 'visual'):
         if not re.fullmatch(r'#[a-zA-Z][a-zA-Z0-9_-]{0,48}', check.get('selector', '')):
             raise ValueError('UI check selector must be a single element ID')

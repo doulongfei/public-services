@@ -70,6 +70,9 @@ export function acceptanceError(content, task) {
   if (!Array.isArray(data.checks) || data.checks.length<1 || data.checks.length>4) return 'checks must contain 1-4 checks.';
   for (const c of data.checks) {
     if (!c || !['core','ui','visual'].includes(c.kind)) return 'kind must be core, ui or visual.';
+    const fields = {core:['kind','initial','steps','input','path','op','value'],ui:['kind','selector','phase','property','attribute','op','value'],visual:['kind','selector','phase']};
+    const extra = Object.keys(c).filter(key=>!fields[c.kind].includes(key));
+    if (extra.length) return `Unsupported ${c.kind} check fields: ${extra.join(', ')}. UI/visual scenes do not simulate custom inputs or actions; choose a check observable in the stated scene.`;
     if (c.kind==='visual') {
       if (c.selector!=='#arena') return 'Visual selector must be #arena.';
       continue;

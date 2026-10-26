@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
 
+// 同一批场景全部执行后统一反馈，避免模型每轮只能看见第一个错误断言。
+export function assertUiResults(results) {
+  const failures = [...results.entries()].filter(([, result]) => result.error);
+  assert.equal(failures.length, 0, 'UI acceptance failed:\n'+failures.slice(0, 8)
+    .map(([check, result]) => check.slice(0, 500)+': '+result.error.message.slice(0, 300)).join('\n'));
+}
+
 // 晚期第一个敌人可能是 Boss，必须按类型验证普通敌人与侦察机。
 export function checkDifficulty(core) {
   for (const [seed, kind, cap, earlySpeed] of [[.1, 'scout', 220, 73], [.5, 'normal', 180, 53]]) {

@@ -535,10 +535,12 @@ def acceptance_prompt(cp, candidate):
     # 实现与验收分离，验收阶段只有声明文件可写，不能为迎合测试改动源码。
     text = f"Task ID: {cp['task']}. ACCEPTANCE STAGE ONLY. The implementation already passed retained regression. Write ONLY game/acceptance.json with ONE write call, then finish. Do not edit source or NOTES.md.\n"
     text += 'Read the actual changed source below. Describe 1-4 checks, with at least ONE that passes on the candidate and fails on the old source. Do not invent selectors or state fields. Do not claim an unchanged field proves improvement.\n'
+    text += 'Prefer ONE minimal, reliable check proving the change. Additional checks must be necessary and actually true in their specified scene, not speculative behavior. Attribute values are strings or null, not booleans.\n'
     text += 'JSON object keys: task (exact task ID above), checks (array length 1-4). No Markdown in the file, no comments, no executable test code.\n'
     text += 'Each check has kind and op (eq/gt/gte/lt/lte/contains/exists), plus scalar value if needed. Core: kind=core, path=actual state field path, optional initial object, steps integer 1-4000 (never 0), input object. Core runs in playing at 1/60 seconds. Allowed initial keys: time, score, hp, spawn, shot, player, enemies, pickups, shield, level, bullets. Allowed input keys: x,y,shield,reducedMotion.\n'
     text += 'UI: kind=ui, selector=ONE real element ID from the source, phase=ready/playing/paused, property=text/visible/attribute. For attribute also set attribute='+ '/'.join(UI_ATTRIBUTES)+'. Never change button names for a test. Visual: {"kind":"visual","selector":"#arena"} compares deterministic Canvas pixels. A visual check is useful only when you changed render.js.\n'
     text += 'UI/visual scenes capture ready after 32ms, playing after starting for 64ms, or paused immediately after the pause action. They cannot wait for late waves or run arbitrary actions. Each visual check must itself show different pixels at its selected phase; omit it for late-only render changes. For late mechanics use core initial.time and a real state path instead.\n'
+    text += 'Only core checks accept input, initial and steps. UI/visual checks MUST NOT contain those fields or actions. In a playing UI scene the shield has NOT been activated; do not assert an active shield or its active-only title. Choose the actual initial/idle value if that newly exposes a useful state.\n'
     import difflib
     source=baseline(cp['base_version'])
     for name in checkpoint_files(cp):

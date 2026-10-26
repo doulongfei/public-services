@@ -565,5 +565,15 @@ class Workflow(unittest.TestCase):
             with self.assertRaises(ValueError): validate_check(check)
         validate_check({'kind': 'core', 'path': 'level', 'op': 'gt', 'value': 1, 'initial': {'score': 100}})
 
+    def test_ui_checks_cannot_silently_ignore_core_inputs_or_custom_actions(self):
+        from acceptance import validate_check
+        check={'kind':'ui','selector':'#shield-btn','phase':'playing','property':'attribute','attribute':'aria-pressed','op':'eq','value':'false'}
+        validate_check(check)
+        for extra in ({'input':{'shield':True}}, {'initial':{'shield':{'active':True}}}, {'steps':30}, {'actions':['click']}):
+            with self.assertRaisesRegex(ValueError,'do not simulate custom inputs'):
+                validate_check({**check,**extra})
+        with self.assertRaisesRegex(ValueError,'Unsupported visual check fields'):
+            validate_check({'kind':'visual','selector':'#arena','input':{'shield':True}})
+
 
 if __name__ == '__main__': unittest.main()

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {chromium} from '/opt/runtime/node_modules/playwright/index.mjs';
-import {checkValue} from './checks.mjs';
+import {checkValue, assertUiResults} from './checks.mjs';
 
 const root=process.env.GAME_ROOT||'/workspace/game',out=process.env.OUTPUT_ROOT||'/output';
 const baseline=process.env.BASELINE_ROOT||'/baseline/game';
@@ -141,7 +141,7 @@ try{
   return results;
  }
  const candidateResults=await readChecks(suite.checks.filter(c=>c.kind!=='core'));
- for(const result of candidateResults.values())if(result.error)throw result.error;
+ assertUiResults(candidateResults);
  const evidence=JSON.parse(await fs.readFile(out+'/core-evidence.json','utf8'));
  const previousResults=await readChecks(suite.new_checks.filter(c=>c.kind!=='core'),true);
  for(const check of suite.new_checks.filter(c=>c.kind!=='core')){

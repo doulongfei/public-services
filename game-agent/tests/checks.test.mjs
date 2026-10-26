@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkDifficulty, coreCheck} from './checks.mjs';
+import {checkDifficulty, coreCheck, assertUiResults} from './checks.mjs';
+
+test('一次报告多个 UI 断言错误，保留选择器、属性和实际值', () => {
+  assertUiResults(new Map([['good', {passed:true}]]));
+  const results=new Map([
+    ['{"selector":"#shield-btn","attribute":"aria-pressed"}', {error:new Error('expected true, got false')}],
+    ['{"selector":"#shield-btn","attribute":"title"}', {error:new Error('missing title text')}],
+  ]);
+  assert.throws(()=>assertUiResults(results), error=>/aria-pressed/.test(error.message)&&/title/.test(error.message)&&/got false/.test(error.message));
+});
 
 // Boss 排在普通敌人前面的回归场景，独立变更各项边界以检验验收器。
 function fixture({normal=180, scout=220, interval=.35, early=0, stop=false}={}) {

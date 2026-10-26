@@ -108,6 +108,16 @@ test('自审可定向读取辅助源码，但只能编辑本阶段文件', () =>
   } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
 
+test('UI 声明不能静默忽略核心输入或自行发明场景动作', () => {
+  const check={kind:'ui',selector:'#shield-btn',phase:'playing',property:'attribute',attribute:'aria-pressed',op:'eq',value:'false'};
+  const validate=c=>acceptanceError(JSON.stringify({task:'self-review',checks:[c]}),'self-review');
+  assert.equal(validate(check),null);
+  for (const extra of [{input:{shield:true}},{initial:{shield:{active:true}}},{steps:30},{actions:['click']}]) {
+    assert.match(validate({...check,...extra}),/do not simulate custom inputs/);
+  }
+  assert.match(validate({kind:'visual',selector:'#arena',input:{shield:true}}),/Unsupported visual check fields/);
+});
+
 test('连续三次无效工具请求提前终止，避免重复读文件耗尽半小时', async () => {
   const handlers={};let aborted=0;
   guard({on:(event,callback)=>{handlers[event]=callback;}});
