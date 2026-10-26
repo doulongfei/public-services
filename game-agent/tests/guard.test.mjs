@@ -91,6 +91,21 @@ test('验收阶段源码只读，非法声明不能落盘', () => {
   }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
 
+test('自审可定向读取辅助源码，但只能编辑本阶段文件', () => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'starharbor-context-'));
+  try {
+    fs.mkdirSync(root+'/game');
+    fs.writeFileSync(root+'/game/core.js','const a=1;');
+    fs.writeFileSync(root+'/game/main.js','const b=2;');
+    const options={readFiles:['game/core.js','game/main.js']},files=['game/core.js'];
+    assert.equal(checkFile({toolName:'read',input:{path:root+'/game/main.js'}},root,files,[],options),undefined);
+    assert.equal(checkFile({toolName:'edit',input:{path:root+'/game/main.js'}},root,files,[],options).block,true);
+    const failure=checkFile({toolName:'read',input:{path:root+'/game'}},root,files,[],options);
+    assert.match(failure.reason,/Stage writable paths: game\/core.js/);
+    assert.match(failure.reason,/Read-only source paths: game\/core.js, game\/main.js/);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
+});
+
 test('连续三次无效工具请求提前终止，避免重复读文件耗尽半小时', async () => {
   const handlers={};let aborted=0;
   guard({on:(event,callback)=>{handlers[event]=callback;}});

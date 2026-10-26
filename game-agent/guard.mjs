@@ -20,7 +20,7 @@ export function checkFile(event, root, files, anchors=[], options={}) {
   const target = path.resolve(root, event.input.path ?? '');
   const relative = path.relative(root, target);
   const readable = event.toolName === 'read' && (options.readFiles || []).includes(relative);
-  if (!files.includes(relative) && !readable) return {block: true, reason: 'Only the files listed in this stage are writable. Their current source or actual diff is already in the prompt.'};
+  if (!files.includes(relative) && !readable) return {block: true, reason: `Stage writable paths: ${files.join(', ')}. Read-only source paths: ${(options.readFiles || []).join(', ')}. Use exact file paths under /workspace; directories and metadata outside this stage are unavailable.`};
   const existing = fs.existsSync(target) ? target : path.dirname(target);
   if (!fs.realpathSync(existing).startsWith(root + path.sep)) return {block: true, reason: 'Path escapes workspace.'};
   if (event.toolName === 'write' && fs.existsSync(target) && !['game/acceptance.json', 'NOTES.md'].includes(relative)) {

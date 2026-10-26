@@ -1,5 +1,24 @@
 import assert from 'node:assert/strict';
 
+// 晚期第一个敌人可能是 Boss，必须按类型验证普通敌人与侦察机。
+export function checkDifficulty(core) {
+  for (const [seed, kind, cap, earlySpeed] of [[.1, 'scout', 220, 73], [.5, 'normal', 180, 53]]) {
+    for (const time of [0, 1000]) {
+      const state = Object.assign(core.createState(), {phase:'playing', time, spawn:0, shot:999});
+      core.step(state, .02, {}, () => seed);
+      const mobs = state.enemies.filter(enemy => !enemy.isBoss && enemy.kind === kind);
+      assert.ok(mobs.length > 0, `${kind} enemies must still spawn at time=${time}`);
+      assert.ok(mobs.every(enemy => Number.isFinite(enemy.speed) && enemy.speed > 0 && enemy.speed <= cap), `${kind} speed must be capped at ${cap}`);
+      if (time === 0) assert.ok(mobs.every(enemy => enemy.speed === earlySpeed), `${kind} early speed must remain ${earlySpeed}`);
+      assert.ok(state.spawn >= .35, 'Late spawn interval must remain fair');
+      // 清掉当前敌人后仍须能继续生成，不能通过停刷来满足限速断言。
+      state.enemies = []; state.spawn = 0;
+      core.step(state, .02, {}, () => seed);
+      assert.ok(state.enemies.some(enemy => !enemy.isBoss && enemy.kind === kind), `${kind} spawning must continue after a boss`);
+    }
+  }
+}
+
 export function checkValue(actual, check) {
   const expected=check.value;
   let ok=false;

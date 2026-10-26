@@ -71,7 +71,7 @@ PLANS = {
     'accessibility': (['main.js'], 'Make #arena keyboard-focusable (tabindex="0") with an informative Chinese aria-label. Focus it in launch() after hiding the overlay. Add Escape to pause a playing run without changing P toggle or button accessible names. Preserve mouse/touch controls.',
                       {'kind': 'ui', 'selector': '#arena', 'phase': 'playing', 'property': 'attribute', 'attribute': 'tabindex', 'op': 'eq', 'value': '0'}),
     'difficulty': (['core.js'], 'Cap normal enemy speed at 180 and scout speed at 220 while preserving their initial speed and variety. Set a minimum spawn interval of 0.35 seconds for late waves. Preserve damage, wave timing and weapon/pickup rules. This is a late-game balance cap, not a rewrite.',
-                   {'kind': 'core', 'initial': {'time': 1000, 'spawn': 0}, 'path': 'enemies.0.speed', 'op': 'lte', 'value': 220}),
+                   {'kind': 'core', 'initial': {'time': 1000, 'spawn': 0}, 'path': 'spawn', 'op': 'gte', 'value': .35}),
     'performance': (['core.js'], 'Remove bullets once fully outside the 900x600 arena with a 32px margin (x<-32, x>932, y<-32 or y>632), in addition to existing lifetime cleanup. Preserve collisions, scoring, in-bounds live bullets, damage feedback and every other mechanic. Make one focused edit to the existing bullet filter.',
                     {'kind': 'core', 'initial': {'spawn': 999, 'shot': 999, 'bullets': [{'x': -100, 'y': -100, 'vx': -1, 'vy': -1, 'life': 2}]}, 'path': 'bullets.length', 'op': 'eq', 'value': 0}),
     'onboarding': (['index.html'], 'Add a visible Chinese instructions paragraph id="flight-guide" inside the ready overlay. Explain movement, automatic fire, P pause, health pickups, and weapon levels: 15 kills for Lv2 and 30 for Lv3. Preserve all existing element IDs and button text, especially 开始游戏 →. Keep instructions concise and mobile-friendly.',
@@ -92,6 +92,23 @@ VIEW_PLANS = {
 
 WAVE_ANCHORS = ["const pauseMsg=document.createElement('div');", 'step(state,dt,input);render(ctx,state);']
 
+# 自审的关注点与可写文件一起定义，不能重用首轮“添加既有功能”的指令。
+REVIEW_LENSES = [
+    (['core.js'], 'Review core rules for ONE real timer, lifecycle, collision or state-boundary defect. Prefer a small bug demonstrable by a deterministic core scenario. Inspect timers that cross zero, entity cleanup, and consistency of existing rules; do not change balance arbitrarily or add an unused field.'),
+    (['render.js'], 'Review current Canvas rendering for ONE missing, useful visual cue or readability improvement visible in the ready or first playing frame. Choose a detail not already present. Rendering must remain read-only and inexpensive. Do not add decorative changes that hide useful information.'),
+    (['main.js'], 'Review existing DOM/HUD accessibility and explanations for ONE missing useful improvement visible in ready/playing/paused. Preserve controls, existing accessible button names and all game rules. Use a real element ID and observable text or an allowed accessibility attribute for proof.'),
+    (['index.html', 'style.css'], 'Review first-run guidance and mobile readability for ONE concrete missing explanation or accessibility improvement. Preserve existing element IDs and button names, especially 开始游戏 →. Prove a useful visible text or accessibility change on a real element ID; CSS-only changes cannot be proved by the Canvas check.'),
+]
+SOURCE_FILES = ['core.js', 'render.js', 'main.js', 'index.html', 'style.css']
+
+
+def review_lens(cursor):
+    return REVIEW_LENSES[max(0, cursor-(len(TOPICS)-1)) % len(REVIEW_LENSES)]
+
+
+def checkpoint_files(cp):
+    return review_lens(cp['cursor'])[0] if cp['task'] == 'self-review' else task_files(cp['task'])
+
 
 def task_files(task):
     if task in PLANS:
@@ -103,9 +120,9 @@ def task_files(task):
             'performance': ['core.js', 'render.js'], 'onboarding': ['main.js', 'index.html']}.get(task, ['core.js', 'render.js'])
 
 
-def generation_stages(task):
+def generation_stages(task, cp=None):
     # 固定功能先实现并验收核心规则，再让独立上下文实现页面，禁止跨层来回修补。
-    return [[name] for name in task_files(task)] if task in PLANS else [task_files(task), ['acceptance.json']]
+    return [[name] for name in task_files(task)] if task in PLANS else [checkpoint_files(cp) if cp else task_files(task), ['acceptance.json']]
 
 
 def reset_generation(cp):
@@ -250,7 +267,7 @@ def run_agent(cfg, candidate, prompt, logfile, state, files=None):
             '-e', 'PI_CODING_AGENT_DIR=/tmp/pi-profile',
             '-e', 'STARHARBOR_FILES=' + json.dumps(allowed),
             '-e', 'STARHARBOR_TASK=' + state['current_task'],
-            '-e', 'STARHARBOR_READ_FILES=' + json.dumps(['game/'+f for f in task_files(state['current_task'])] if files==['acceptance.json'] else []),
+            '-e', 'STARHARBOR_READ_FILES=' + json.dumps(['game/'+f for f in SOURCE_FILES]),
             '-e', 'STARHARBOR_INSERT_ANCHORS=' + json.dumps(WAVE_ANCHORS if state['current_task']=='wave-feedback' and files==['main.js'] else []),
             '--mount', f'type=bind,src={candidate},dst=/workspace',
             '--mount', f'type=bind,src={APP / "models.json"},dst=/run/config/models.json,readonly',
@@ -441,7 +458,10 @@ def baseline(version):
 def new_checkpoint(state, number):
     version = release.git(BASE, 'rev-parse', state['last_release']).strip()
     cursor = state.get('topic_index', 0)
-    deferred = next((item for item in state.get('deferred_tasks', []) if item['after'] <= time.time()), None) if cursor >= len(TOPICS) else None
+    # 六次失败后的固定任务只在发布基线变化后重试；同一源码不能每小时死循环。
+    deferred = next((item for item in state.get('deferred_tasks', [])
+                     if item['task'] != 'self-review' and item['after'] <= time.time()
+                     and item.get('base_version', version) != version), None) if cursor >= len(TOPICS) else None
     if deferred:
         cursor = deferred['cursor']
     return {'base_version': version, 'cursor': cursor,
@@ -464,15 +484,14 @@ def candidate_path(cp):
 
 def make_prompt(cp, candidate, files=None):
     cursor = cp['cursor']
-    detail = TOPICS[cursor % len(TOPICS)][1]
-    if cursor >= len(TOPICS):
-        detail = 'Choose one real missing feature or defect from the source and feedback. Optional review lens: ' + detail
-    files = files or task_files(cp['task'])
+    detail = review_lens(cursor)[1] if cp['task'] == 'self-review' else TOPICS[cursor % len(TOPICS)][1]
+    files = files or checkpoint_files(cp)
     if files == ['acceptance.json']:
         return acceptance_prompt(cp, candidate)
     instruction = VIEW_PLANS[cp['task']] if cp['task'] in VIEW_PLANS and files != ['core.js'] else PLANS.get(cp['task'], (None, detail))[1]
     text = f"Task ID: {cp['task']}. {instruction}\n"
     text += 'Edit only ' + ', '.join('game/'+f for f in files) + '. Source is included below; do not survey other files. Make minimal edits and finish normally. Preserve all existing behavior.\n'
+    text += 'Workspace root is /workspace. Supporting source is READ-ONLY: '+', '.join('game/'+f for f in SOURCE_FILES if f not in files)+'. At most TWO targeted reads if needed; directory reads and NOTES.md are unavailable. Use the supplied source first.\n'
     if cp['task'] in PLANS:
         text += 'The controller supplies acceptance.json and records your summary in NOTES.md. You only edit game source; do not write metadata.\n'
         if files == ['core.js']:
@@ -492,13 +511,18 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
         text += 'Existing hit-feedback tests trigger ordinary collision with no shield input. Preserve damageFlash for unshielded hits. Only input.shield activates the shield.\n'
     if cp['task']=='boss' and files==['core.js']:
         text += 'The next spawn at time=120 must be an elite. Decrement EACH elite enemy.telegraph in step() to zero; a separate global timer does not expire enemy.telegraph. During warning it cannot deal contact damage; after warning it must be able to deal damage. Bullet hits subtract HP and defeat it only at zero. Keep the ORIGINAL normal spawn condition and schedule: a boss must never disable normal/scout spawns. Store any new flags in createState(). Preserve time-based waves.\n'
+    if cp['task']=='difficulty':
+        text += 'Late scenes also contain a slow boss. Check ordinary enemies by kind, never assume enemies[0] is normal. The acceptance proof checks the actual spawn interval; retained feature tests separately verify normal <=180, scout <=220, early-game speeds and continued spawning.\n'
     for name in files:
         content = (candidate/'game'/name).read_text()
-        limit = 14000 // len(files)
+        limit = 24000 // len(files)
         if len(content) > limit:
             content = content[:limit//2]+'\n[...middle omitted; use a targeted read if needed...]\n'+content[-limit//2:]
         text += f'\nCURRENT /workspace/game/{name}:\n```\n{content}\n```\n'
     text += '\nOwner feedback (within fixed contracts):\n' + controls().get('feedback', '')[-800:]
+    if cp['task'] == 'self-review':
+        recent = load(BASE/'public/state.json', {}).get('history', [])
+        text += '\nRecent accepted changes; do not repeat them:\n'+'\n'.join(e.get('summary', '')[:350] for e in recent if e.get('result') == 'accepted')[-1600:]
     if cp.get('error'):
         text += '\nREPAIR ONLY: the included source is the CURRENT candidate. Preserve working parts; fix only the specific failed assertion with the smallest edit. Do not reimplement the whole feature.\nPrevious validation error:\n' + cp['error'][-1400:]
     return text
@@ -514,7 +538,7 @@ def acceptance_prompt(cp, candidate):
     text += 'UI/visual scenes capture ready after 32ms, playing after starting for 64ms, or paused immediately after the pause action. They cannot wait for late waves or run arbitrary actions. Each visual check must itself show different pixels at its selected phase; omit it for late-only render changes. For late mechanics use core initial.time and a real state path instead.\n'
     import difflib
     source=baseline(cp['base_version'])
-    for name in task_files(cp['task']):
+    for name in checkpoint_files(cp):
         before=(source/'game'/name).read_text();after=(candidate/'game'/name).read_text()
         diff=''.join(difflib.unified_diff(before.splitlines(True),after.splitlines(True),fromfile='published/'+name,tofile='candidate/'+name))
         text += '\nACTUAL DIFF '+name+':\n'+diff[:10000]
@@ -529,7 +553,7 @@ def stage_hashes(candidate, files):
 
 def failed_generation_step(cp, failure):
     """按实际失败的固定测试定位文件，不能总把核心回归交给末尾渲染修复。"""
-    stages = generation_stages(cp['task'])
+    stages = generation_stages(cp['task'], cp)
     syntax = re.search(r'/workspace/game/([a-z0-9_.-]+\.js)(?::|\b)', failure)
     for index, files in enumerate(stages):
         if syntax and syntax.group(1) in files:
@@ -540,7 +564,7 @@ def failed_generation_step(cp, failure):
 
 
 def generate(cfg, cp, candidate, source, round_dir, state):
-    stages = generation_stages(cp['task'])
+    stages = generation_stages(cp['task'], cp)
     end = min(time.time()+cfg['round_timeout'], cfg['deadline'])
     results = cp.setdefault('stage_results', {})
     for index in range(cp.get('generation_step', 0), len(stages)):
@@ -626,7 +650,7 @@ def main():
     secrets = [Path(cfg['model_key']).read_text().strip(), (BASE / 'control/api-key').read_text().strip()]
     state = release.recover(BASE) or load(BASE / 'public/state.json', {'round': 0, 'accepted': 0, 'rejected': 0, 'history': [], 'tokens': 0})
     state.update({'started_at': cfg['started_at'], 'deadline': cfg['deadline'], 'model': 'qwen3.6-35b-a3b-q3_k_m',
-                  'workflow_version': 5, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3}})
+                  'workflow_version': 6, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3}})
     cp = load(BASE / 'checkpoint.json', {})
     clean_container()
     try:
@@ -744,7 +768,7 @@ def main():
                     result = 'retrying' if infra or incomplete else 'rejected'
                     if not infra:
                         cp['stage'] = 'generating'
-                        cp['generation_step'] = (min(cp.get('generation_step', 0), len(generation_stages(task))-1)
+                        cp['generation_step'] = (min(cp.get('generation_step', 0), len(generation_stages(task, cp))-1)
                                                  if incomplete else failed_generation_step(cp, failure))
                         cp.get('stage_results', {}).pop(str(cp['generation_step']), None)
                         if task not in PLANS and ('No new acceptance check' in failure or 'No game source changes' in failure):
@@ -762,11 +786,13 @@ def main():
                 event(state, {'round': number, 'task': task, 'result': result,
                               'summary': public_failure(failure), 'failure_kind': type(error).__name__,
                               'baseline_reset': 'candidate' not in cp, 'at': time.time()})
-                if result != 'interrupted' and cp.get('attempt_failures', 0) >= 6:
+                if result != 'interrupted' and cp.get('attempt_failures', 0) >= (3 if task == 'self-review' else 6):
                     # 不把失败记成成功；先处理后续任务，完成首轮任务表后再尝试此项。
-                    state['deferred_tasks'].append({'cursor': cp['cursor'], 'task': task, 'after': time.time()+3600})
+                    if task != 'self-review':
+                        state['deferred_tasks'].append({'cursor': cp['cursor'], 'task': task,
+                                                        'base_version': cp['base_version'], 'after': time.time()+3600})
                     state['topic_index'] = cp.get('next_cursor', cp['cursor']+1)
-                    state['history'][-1].update({'result': 'deferred', 'summary': '本任务连续六次未完成，已保留记录并重新排队，先继续后续任务。'})
+                    state['history'][-1].update({'result': 'deferred', 'summary': ('本次自审连续三次未完成，保留失败记录并切换关注点。' if task == 'self-review' else '本任务连续六次未完成，保留记录，等待发布基线更新后再尝试；先继续其他任务。')})
                     state['retry_at'] = time.time()+cfg['cooldown']
                     cp = {}; checkpoint(cp)
                 state['phase'] = 'cooldown'; save(state)

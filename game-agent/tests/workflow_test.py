@@ -196,7 +196,7 @@ class Workflow(unittest.TestCase):
         self.assertEqual(result['stage_results']['0']['summary'],'verified core')
         self.assertEqual(state['topic_index'],3)
 
-    def test_six_failures_defer_without_claiming_success_and_retry_after_queue(self):
+    def test_six_failures_wait_for_changed_baseline_instead_of_repeating_forever(self):
         for _ in range(6): cp, state = self.run_failed_attempt(self.runner.ModelIncomplete('budget exhausted'))
         self.assertEqual(cp, {})
         self.assertEqual(state['accepted'], 0)
@@ -205,8 +205,47 @@ class Workflow(unittest.TestCase):
         state['topic_index'] = len(self.runner.TOPICS)
         state['deferred_tasks'][0]['after'] = 0
         queued = self.runner.new_checkpoint(state, 7)
+        self.assertEqual(queued['task'], 'self-review')
+        self.assertEqual(state['deferred_tasks'][0]['base_version'], self.first)
+        # 真正的新发布后，固定任务才获得一次新的有界尝试机会。
+        shutil.rmtree(self.base/'rounds/00001/candidate')
+        _, version, next_state = self.prepared()
+        self.release.activate(self.base, next_state['release_id'], lambda: True)
+        state['last_release'] = version[:12]
+        queued = self.runner.new_checkpoint(state, 8)
         self.assertEqual(queued['task'], 'pause-overlay')
         self.assertEqual(queued['next_cursor'], len(self.runner.TOPICS))
+
+    def test_legacy_and_generic_deferred_tasks_cannot_starve_new_review(self):
+        state={**self.state,'topic_index':17,'deferred_tasks':[
+            {'cursor':8,'task':'difficulty','after':0},
+            {'cursor':16,'task':'self-review','after':0,'base_version':'old'}]}
+        cp=self.runner.new_checkpoint(state,1)
+        self.assertEqual(cp['cursor'],17)
+        self.assertEqual(cp['task'],'self-review')
+
+    def test_review_changes_focus_after_three_failures_without_claiming_a_release(self):
+        self.release.atomic(self.base/'public/state.json',{**self.state,'topic_index':17})
+        for _ in range(3):cp,state=self.run_failed_attempt(self.runner.ModelIncomplete('blocked tool'))
+        self.assertEqual(cp,{})
+        self.assertEqual(state['accepted'],0)
+        self.assertEqual(state['topic_index'],18)
+        self.assertEqual(state.get('deferred_tasks'),[])
+        self.assertEqual(self.runner.checkpoint_files(self.runner.new_checkpoint(state,4)),['index.html','style.css'])
+
+    def test_review_prompt_scope_matches_generation_and_metadata_for_multiple_cycles(self):
+        for cursor in range(15,35):
+            cp={'task':'self-review','cursor':cursor,'base_version':self.first}
+            files=self.runner.checkpoint_files(cp)
+            prompt=self.runner.make_prompt(cp,self.base/'history')
+            self.assertIn('Edit only '+', '.join('game/'+name for name in files),prompt)
+            self.assertEqual(self.runner.generation_stages('self-review',cp),[files,['acceptance.json']])
+            self.assertNotIn('Optional review lens:',prompt)
+            self.assertNotIn('Modify ONLY game/main.js to add a pause overlay',prompt)
+            metadata=self.runner.acceptance_prompt(cp,self.base/'history')
+            for name in files:
+                self.assertIn('CURRENT /workspace/game/'+name,prompt)
+                self.assertIn('ACTUAL DIFF '+name,metadata)
 
     def test_failed_attempt_usage_is_counted_and_budget_abort_is_not_infra(self):
         p = self.write_log(reason='error')
@@ -423,7 +462,7 @@ class Workflow(unittest.TestCase):
             calls.append('regression');self.assertEqual(suite['new_checks'],[])
         with patch.object(self.runner,'run_agent',side_effect=agent),patch.object(self.runner,'validate_runtime',side_effect=verify):
             self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
-        self.assertEqual(calls,[('core.js','render.js'),'regression',('acceptance.json',)])
+        self.assertEqual(calls,[('core.js',),'regression',('acceptance.json',)])
         self.assertEqual(cp['generation_step'],2)
         self.assertEqual(self.release.current(self.base)['version'],self.first)
 

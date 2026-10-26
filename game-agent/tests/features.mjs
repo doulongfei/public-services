@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
-import {coreCheck} from './checks.mjs';
+import {coreCheck, checkDifficulty} from './checks.mjs';
 const suite=JSON.parse(await fs.readFile(process.env.CONTRACT_FILE||'/run/contracts.json','utf8'));
 const root=process.env.GAME_ROOT||'/workspace/game',oldRoot=process.env.BASELINE_ROOT||'/baseline/game';
 const core=await import(root+'/core.js'),old=await import(oldRoot+'/core.js');
@@ -9,12 +9,7 @@ const step=(state,dt,input={},random=()=>.5)=>core.step(state,dt,input,random);
 const playing=()=>Object.assign(createState(),{phase:'playing',spawn:999,shot:999});
 for(const feature of suite.features){
  if(feature==='difficulty'){
-  for(const seed of [.1,.5]){
-   const s=playing();s.time=1000;s.spawn=0;step(s,.02,{},()=>seed);
-   assert.ok(s.enemies.length>0,'Late waves must still spawn enemies');
-   assert.ok(s.enemies.every(e=>Number.isFinite(e.speed)&&e.speed>0&&e.speed<=220),'Late enemy speed must be capped');
-   assert.ok(s.spawn>=.35,'Late spawn interval must remain fair');
-  }
+  checkDifficulty(core);
  }
  if(feature==='performance'){
   const s=playing();
