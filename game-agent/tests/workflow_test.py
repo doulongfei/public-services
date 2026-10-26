@@ -243,6 +243,9 @@ class Workflow(unittest.TestCase):
             self.assertNotIn('Optional review lens:',prompt)
             self.assertNotIn('Modify ONLY game/main.js to add a pause overlay',prompt)
             metadata=self.runner.acceptance_prompt(cp,self.base/'history')
+            self.assertIn('aria-pressed',prompt)
+            self.assertIn('aria-pressed',metadata)
+            if 'main.js' in files:self.assertIn('#shield-btn aria-label MUST remain 启动护盾',prompt)
             for name in files:
                 self.assertIn('CURRENT /workspace/game/'+name,prompt)
                 self.assertIn('ACTUAL DIFF '+name,metadata)
@@ -506,6 +509,7 @@ class Workflow(unittest.TestCase):
     def test_accessibility_contract_can_assert_real_dom_attributes(self):
         from acceptance import validate_check
         validate_check(self.runner.PLANS['accessibility'][2])
+        validate_check({'kind':'ui','selector':'#shield-btn','property':'attribute','attribute':'aria-pressed','op':'eq','value':'false'})
         with self.assertRaisesRegex(ValueError,'attribute'):
             validate_check({'kind':'ui','selector':'#arena','property':'attribute','attribute':'onclick','op':'exists'})
         self.assertEqual(self.runner.generation_stages('accessibility'),[['main.js']])

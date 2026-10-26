@@ -12,7 +12,7 @@ import threading
 import time
 
 import release
-from acceptance import proposal
+from acceptance import proposal, UI_ATTRIBUTES
 
 atomic = release.atomic
 
@@ -507,6 +507,9 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
     else:
         text += 'IMPLEMENTATION STAGE ONLY. Do not write acceptance.json or NOTES.md. A separate stage will produce the checks after this source passes regression. Choose one small observable improvement; preserve all existing behavior.\n'
         text += 'Choose a change provable by a core state scenario (initial time/score/entities plus steps), real UI text/visibility/accessibility attributes, or a Canvas difference visible in the ready/first playing frame. Late-only cosmetic changes cannot be proved by a default first-frame screenshot.\n'
+        text += 'Supported UI proof attributes: '+', '.join(UI_ATTRIBUTES)+'. Do not choose an improvement requiring unsupported checks.\n'
+        if 'main.js' in files:
+            text += 'FIXED BUTTON CONTRACTS: #shield-btn aria-label MUST remain 启动护盾 in every phase. #pause aria-label must be 暂停游戏 while playing and 继续游戏 while paused. Never replace these names with status text. Convey extra status using aria-pressed, aria-describedby, title, or a separate visible element with an ID. Preserve the original accessible names exactly.\n'
     if cp['task']=='shield' and files==['core.js']:
         text += 'Existing hit-feedback tests trigger ordinary collision with no shield input. Preserve damageFlash for unshielded hits. Only input.shield activates the shield.\n'
     if cp['task']=='boss' and files==['core.js']:
@@ -534,7 +537,7 @@ def acceptance_prompt(cp, candidate):
     text += 'Read the actual changed source below. Describe 1-4 checks, with at least ONE that passes on the candidate and fails on the old source. Do not invent selectors or state fields. Do not claim an unchanged field proves improvement.\n'
     text += 'JSON object keys: task (exact task ID above), checks (array length 1-4). No Markdown in the file, no comments, no executable test code.\n'
     text += 'Each check has kind and op (eq/gt/gte/lt/lte/contains/exists), plus scalar value if needed. Core: kind=core, path=actual state field path, optional initial object, steps integer 1-4000 (never 0), input object. Core runs in playing at 1/60 seconds. Allowed initial keys: time, score, hp, spawn, shot, player, enemies, pickups, shield, level, bullets. Allowed input keys: x,y,shield,reducedMotion.\n'
-    text += 'UI: kind=ui, selector=ONE real element ID from the source, phase=ready/playing/paused, property=text/visible/attribute. For attribute also set attribute=aria-label/aria-describedby/tabindex/role/title. Never change button names for a test. Visual: {"kind":"visual","selector":"#arena"} compares deterministic Canvas pixels. A visual check is useful only when you changed render.js.\n'
+    text += 'UI: kind=ui, selector=ONE real element ID from the source, phase=ready/playing/paused, property=text/visible/attribute. For attribute also set attribute='+ '/'.join(UI_ATTRIBUTES)+'. Never change button names for a test. Visual: {"kind":"visual","selector":"#arena"} compares deterministic Canvas pixels. A visual check is useful only when you changed render.js.\n'
     text += 'UI/visual scenes capture ready after 32ms, playing after starting for 64ms, or paused immediately after the pause action. They cannot wait for late waves or run arbitrary actions. Each visual check must itself show different pixels at its selected phase; omit it for late-only render changes. For late mechanics use core initial.time and a real state path instead.\n'
     import difflib
     source=baseline(cp['base_version'])

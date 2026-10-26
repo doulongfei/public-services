@@ -3,6 +3,8 @@ import json
 import math
 import re
 
+UI_ATTRIBUTES = ('aria-label', 'aria-describedby', 'aria-pressed', 'tabindex', 'role', 'title')
+
 
 def proposal(candidate, task):
     path = candidate / 'game/acceptance.json'
@@ -33,7 +35,7 @@ def validate_check(check):
             return
         if check.get('property') not in ('text', 'visible', 'attribute'):
             raise ValueError('UI property must be text, visible or attribute')
-        if check.get('property') == 'attribute' and check.get('attribute') not in ('aria-label', 'aria-describedby', 'tabindex', 'role', 'title'):
+        if check.get('property') == 'attribute' and check.get('attribute') not in UI_ATTRIBUTES:
             raise ValueError('Unsupported UI attribute')
     else:
         initial = check.get('initial', {})
