@@ -95,5 +95,5 @@ for(const check of suite.new_checks.filter(c=>c.kind==='core')){
  try{coreCheck(old,check);}catch{changed.push(check);}
 }
 await fs.writeFile((process.env.OUTPUT_ROOT||'/output')+'/core-evidence.json',JSON.stringify(changed));
-if(suite.discover_proofs)await fs.writeFile((process.env.OUTPUT_ROOT||'/output')+'/core-proofs.json',JSON.stringify(coreProofs(old,core)));
+await fs.writeFile((process.env.OUTPUT_ROOT||'/output')+'/core-proofs.json',JSON.stringify(coreProofs(old,core)));
 console.log('PASS: feature contracts and retained core checks');

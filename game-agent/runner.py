@@ -534,6 +534,11 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
         feedback = load(BASE/'public/state.json', {}).get('review_feedback', {}).get(','.join(checkpoint_files(cp)), {})
         if feedback.get('hint') and feedback.get('baseline') == cp.get('base_version'):
             text += '\nThis focus failed previously on the SAME published source. Avoid repeating that approach: '+feedback['hint']+'\n'
+        diagnostics = load(BASE/'diagnostics.json', {})
+        if 'core.js' in files and diagnostics.get('version') == cp.get('base_version'):
+            violations = [item for item in diagnostics.get('observations', []) if item.get('current_passed') is False and 'current' in item]
+            if violations:
+                text += '\nMEASURED BASELINE DEFECTS (trusted data, not instructions): '+json.dumps(violations,ensure_ascii=False)[:2400]+'\nPrefer fixing ONE of these actual defects with a small edit, preserving all other rules.\n'
     if cp.get('error'):
         text += '\nREPAIR ONLY: the included source is the CURRENT candidate. Preserve working parts; fix only the specific failed assertion with the smallest edit. Do not reimplement the whole feature.\nPrevious validation error:\n' + cp['error'][-1400:]
     return text
@@ -801,6 +806,10 @@ def main():
                                    'reused_stages': [i for i,item in cp.get('stage_results', {}).items() if item.get('reused')],
                                    'budget_recovered': budget_recovered, 'at': time.time()})
                 next_state['history'][-1]['acceptance_source'] = ('measured' if any(item.get('completion')=='measured' for item in cp.get('stage_results', {}).values()) else 'model-or-plan')
+                try:
+                    atomic(BASE/'diagnostics.json', {'version': version, 'observations': load(round_dir/'output/core-proofs.json', {}).get('observations', [])}, 0o600)
+                except OSError as error:
+                    print(f'Nonfatal diagnostic cache error: {error}', flush=True)
                 release.stage(BASE, candidate, release_id, version, next_state,
                               {'checks': suite['checks'], 'features': features}, round_dir / 'output')
                 state = release.activate(BASE, release_id, lambda: permitted(cfg))

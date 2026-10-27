@@ -516,6 +516,16 @@ class Workflow(unittest.TestCase):
         self.runner.atomic(self.base/'public/state.json',state)
         self.assertNotIn('SAME published source',self.runner.make_prompt(cp,self.base/'history'))
 
+    def test_core_review_receives_only_measured_defects_of_current_baseline(self):
+        cp={'task':'self-review','cursor':15,'base_version':self.first}
+        self.runner.atomic(self.base/'diagnostics.json',{'version':self.first,'observations':[
+            {'check':{'path':'waveNotice.life'},'current':-.01,'current_passed':False},
+            {'check':{'path':'hp'},'current':100,'current_passed':True}]})
+        prompt=self.runner.make_prompt(cp,self.base/'history')
+        self.assertIn('MEASURED BASELINE DEFECTS',prompt);self.assertIn('"current": -0.01',prompt)
+        self.runner.atomic(self.base/'diagnostics.json',{'version':'different','observations':[]})
+        self.assertNotIn('MEASURED BASELINE DEFECTS',self.runner.make_prompt(cp,self.base/'history'))
+
     def test_unchanged_ui_output_does_not_ask_model_to_invent_proof(self):
         candidate=self.base/'rounds/00001/candidate'
         shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))

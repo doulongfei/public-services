@@ -77,9 +77,10 @@ export function coreProofs(before, after) {
   const checks=[],observations=[];
   for(const check of probes){
     const previous=coreValue(before,check),current=coreValue(after,check);
-    observations.push({check,previous,current});
+    let currentPassed=true;try{checkValue(current,check);}catch{currentPassed=false;}
+    observations.push({check,previous,current,current_passed:currentPassed});
     if(previous===undefined||current===undefined)continue;
-    try{checkValue(current,check);}catch{continue;}
+    if(!currentPassed)continue;
     try{checkValue(previous,check);}catch{checks.push(check);}
   }
   return {checks,observations};
