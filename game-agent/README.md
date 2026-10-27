@@ -24,7 +24,7 @@
 {"task":"weapon-upgrade","checks":[{"kind":"core","initial":{"score":100},"steps":1,"path":"level","op":"gt","value":1}]}
 ```
 
-示例只说明字段格式，具体用例必须对应当前任务。core 从 playing 状态开始，合并 initial，以 1/60 秒执行 steps 次，最多 4000 次；input 支持移动和护盾。UI 使用单个真实元素 ID，phase 为 ready/playing/paused，property 为 text/visible/attribute；attribute 仅支持 aria-label、aria-describedby、aria-pressed、tabindex、role、title。比较支持 eq/gt/gte/lt/lte/contains/exists。视觉用例为 `{"kind":"visual","selector":"#arena"}`，在相同随机种子和虚拟时钟下对比画布；后续允许继续改进画面，不固定整幅图的像素。
+示例只说明字段格式，具体用例必须对应当前任务。core 从 playing 状态开始，合并 initial，以 1/60 秒执行 steps 次，最多 4000 次；input 支持移动和护盾。UI 使用单个真实元素 ID，phase 为 ready/playing/paused，property 为 text/visible/attribute；attribute 仅支持 aria-label、aria-describedby、aria-pressed、aria-live、aria-atomic、tabindex、role、title。比较支持 eq/gt/gte/lt/lte/contains/exists。视觉用例为 `{"kind":"visual","selector":"#arena"}`，在相同随机种子和虚拟时钟下对比画布；后续允许继续改进画面，不固定整幅图的像素。
 
 自动验收证明指定行为与回归条件，不代替对乐趣、平衡和视觉质量的试玩评价。既有版本升级运行器时先补跑固定功能验收，不伪造历史模型轮次为新流程成功。
 

@@ -1,6 +1,6 @@
 // 证明来自固定时钟下真实页面的差异；模型不能写入这些观测结果。
 import {coreValue, checkValue} from './checks.mjs';
-export const proofAttributes = ['aria-label','aria-describedby','aria-pressed','tabindex','role','title'];
+export const proofAttributes = ['aria-label','aria-describedby','aria-pressed','aria-live','aria-atomic','tabindex','role','title'];
 const protectedIds = new Set(['start','pause','shield-btn']);
 const signature = node => JSON.stringify([node.tag,node.text,node.attributes]);
 
@@ -47,10 +47,6 @@ export function uiProofs(before, after, phase) {
     if (!old && oldSemantics.has(signature(node))) continue;
     const base = {kind:'ui',selector:'#'+node.id,phase,op:'eq'};
     if(old && !old.visible && (node.text.trim()||Object.keys(node.attributes).length))candidates.push({...base,property:'visible',value:true});
-    if (!protectedIds.has(node.id) && node.text.trim() && node.text.length <= 300 && node.text !== old?.text) {
-      const value=changedText(old?.text,node.text);
-      if(value)candidates.push({...base,op:'contains',property:'text',value});
-    }
     for (const attribute of proofAttributes) {
       const value = node.attributes[attribute];
       if (!value || value === old?.attributes[attribute]) continue;
@@ -60,6 +56,10 @@ export function uiProofs(before, after, phase) {
       const flexible=['aria-label','title','aria-describedby'].includes(attribute);
       const expected=flexible?changedText(old?.attributes[attribute],value):value;
       if(expected)candidates.push({...base,op:flexible?'contains':'eq',property:'attribute',attribute,value:expected});
+    }
+    if (!protectedIds.has(node.id) && node.text.trim() && node.text.length <= 300 && node.text !== old?.text) {
+      const value=changedText(old?.text,node.text);
+      if(value)candidates.push({...base,op:'contains',property:'text',value});
     }
   }
   return candidates;

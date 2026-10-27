@@ -75,6 +75,7 @@ test('提前拒绝最近失败的步骤数组、过量用例、虚构选择器�
   assert.match(acceptanceError(encode([{kind:'ui',selector:'#id',property:'text',op:'exists'}]),'self-review'),/placeholder/);
   assert.match(acceptanceError(encode([{kind:'ui',selector:'#arena',property:'style',op:'exists'}]),'self-review'),/property/);
   assert.equal(acceptanceError(encode([{kind:'ui',selector:'#shield-btn',property:'attribute',attribute:'aria-pressed',op:'eq',value:'false'}]),'self-review'),null);
+  assert.equal(acceptanceError(encode([{kind:'ui',selector:'#shield-status',property:'attribute',attribute:'aria-live',op:'eq',value:'polite'}]),'self-review'),null);
   assert.match(acceptanceError(encode([{kind:'ui',selector:'#shield-btn',property:'attribute',attribute:'onclick',op:'exists'}]),'self-review'),/attribute/);
   assert.match(acceptanceError('{oops','self-review'),/valid JSON/);
   assert.match(acceptanceError(encode([check]),'onboarding'),/task/);

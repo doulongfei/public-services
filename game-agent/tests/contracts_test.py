@@ -35,3 +35,5 @@ class Contracts(unittest.TestCase):
             with self.assertRaises(ValueError):acceptance.validate_check(check)
         acceptance.validate_check({'kind':'core','path':'wave','op':'gte','value':1})
         acceptance.validate_check({'kind':'core','path':'wave','op':'exists'})
+        for attribute,value in [('aria-live','polite'),('aria-atomic','true')]:
+            acceptance.validate_check({'kind':'ui','selector':'#shield-status','property':'attribute','attribute':attribute,'op':'eq','value':value})

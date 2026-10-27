@@ -26,6 +26,13 @@ test('保护按钮名称、隐式角色和无效描述引用不能制造自动�
   assert.equal(proof[0].attribute,'title');assert.equal(proof[0].value,'新的帮助');
 });
 
+test('真实朗读属性优先形成证明，变量名和只加 ID 不会变成虚构选择器',()=>{
+  const before=[node('','护盾就绪')];
+  const proof=uiProofs(before,[node('shield-status','护盾就绪',{'aria-live':'polite','aria-atomic':'true'})],'playing');
+  assert.equal(proof[0].selector,'#shield-status');assert.equal(proof[0].attribute,'aria-live');assert.equal(proof[0].value,'polite');
+  assert.deepEqual(uiProofs(before,[node('shield-status','护盾就绪')],'playing'),[]);
+});
+
 test('核心证明只接受既有玩法不变量的修复，不接受添加无用字段',()=>{
   const fixture=(clamp,expose=true)=>({
     createState:()=>({hp:100,shield:{active:false,cooldown:0},...(expose?{waveNotice:{life:2}}:{})}),

@@ -88,7 +88,7 @@ export function acceptanceError(content, task) {
       if (!/^#[a-zA-Z][a-zA-Z0-9_-]{0,48}$/.test(c.selector||'') || c.selector==='#id') return 'Use ONE actual element ID from the source; never a placeholder.';
       if (!['ready','playing','paused'].includes(c.phase||'ready')) return 'UI phase must be ready, playing or paused.';
       if (!['text','visible','attribute'].includes(c.property)) return 'UI property must be text, visible or attribute.';
-      if (c.property==='attribute'&&!['aria-label','aria-describedby','aria-pressed','tabindex','role','title'].includes(c.attribute)) return 'Unsupported UI attribute.';
+      if (c.property==='attribute'&&!['aria-label','aria-describedby','aria-pressed','aria-live','aria-atomic','tabindex','role','title'].includes(c.attribute)) return 'Unsupported UI attribute.';
     }
   }
   return null;

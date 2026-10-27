@@ -3,7 +3,7 @@ import json
 import math
 import re
 
-UI_ATTRIBUTES = ('aria-label', 'aria-describedby', 'aria-pressed', 'tabindex', 'role', 'title')
+UI_ATTRIBUTES = ('aria-label', 'aria-describedby', 'aria-pressed', 'aria-live', 'aria-atomic', 'tabindex', 'role', 'title')
 
 
 def proposal(candidate, task):

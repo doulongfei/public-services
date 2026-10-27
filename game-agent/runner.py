@@ -521,6 +521,7 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
     else:
         text += 'IMPLEMENTATION STAGE ONLY. Do not write acceptance.json or NOTES.md. A separate stage will produce the checks after this source passes regression. '+('Implement ONLY the measured repair above; do not choose other tasks.' if defects else 'Choose one small observable improvement; preserve all existing behavior.')+'\n'
         text += 'The controller measures real visible UI/Canvas differences and supplies proof automatically when possible. Prefer an actual visible instruction, useful accessibility attribute, or clear rendering improvement. A JS variable name is NOT an element ID. Adding only an ID, comments or unused state is not an improvement.\n'
+        text += 'Give a useful new or improved status element a real unique ID so the browser can measure its actual ARIA/text change. An ID alone still does not count as improvement.\n'
         text += 'Choose a change provable by a core state scenario (initial time/score/entities plus steps), real UI text/visibility/accessibility attributes, or a Canvas difference visible in the ready/first playing frame. Late-only cosmetic changes cannot be proved by a default first-frame screenshot.\n'
         text += 'Supported UI proof attributes: '+', '.join(UI_ATTRIBUTES)+'. Do not choose an improvement requiring unsupported checks.\n'
         if 'main.js' in files:
