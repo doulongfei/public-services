@@ -469,7 +469,7 @@ def new_checkpoint(state, number):
         cursor = deferred['cursor']
     diagnostics = load(BASE/'diagnostics.json', {})
     observations = diagnostics.get('observations', []) if diagnostics.get('version') == version else []
-    if not deferred and cursor >= len(TOPICS)-1 and review_lens(cursor)[0] == ['core.js'] and observations and all(item.get('current_passed') is True for item in observations):
+    if not deferred and cursor >= len(TOPICS)-1 and review_lens(cursor)[0] == ['core.js'] and observations and all(item.get('current_passed') is True for item in observations) and not controls().get('feedback', '').strip():
         # 已通过的有限核心探测不值得让小模型反复猜测缺陷，继续下一项可观测改进。
         cursor += 1
     return {'base_version': version, 'cursor': cursor,
