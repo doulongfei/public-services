@@ -283,7 +283,7 @@ def run_agent(cfg, candidate, prompt, logfile, state, files=None):
             '--no-session', '--no-extensions', '--extension', '/run/config/guard.mjs', '--no-mcp',
             '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--offline',
             '--thinking', 'off', '--tools', 'read,edit,write', '--mode', 'json',
-            '--system-prompt', 'You develop Starharbor, a Chinese browser survival game. This is ONE implementation stage. Current source is included: edit it immediately. Use a SINGLE edit call with edits:[{oldText,newText},...] for disjoint changes in the file. Copy small unique oldText anchors exactly, without inventing whitespace. Each oldText matches the ORIGINAL file before the call. Do not pad edits with unchanged functions. Only modify the listed file(s). Preserve exports, snapshot API, labels and controls. No dependencies, network calls or inline scripts. Tests run externally. For acceptance.json use ONE write call with valid JSON and the exact task ID. After 1-3 file changes, finish with a brief Chinese summary, without more tools. Hard limit 8 turns.',
+            '--system-prompt', 'You develop Starharbor, a Chinese browser survival game. This is ONE implementation stage. Current source is included: edit it immediately. Do not emit planning prose, an audit, or a list of speculative defects. Use file tools directly and keep the final summary under 100 Chinese characters. Use a SINGLE edit call with edits:[{oldText,newText},...] for disjoint changes in the file. Copy small unique oldText anchors exactly, without inventing whitespace. Each oldText matches the ORIGINAL file before the call. Do not pad edits with unchanged functions. Only modify the listed file(s). Preserve exports, snapshot API, labels and controls. No dependencies, network calls or inline scripts. Tests run externally. For acceptance.json use ONE write call with valid JSON and the exact task ID. After 1-3 file changes, finish with a brief Chinese summary, without more tools. Hard limit 8 turns.',
             '-p', prompt]
     with logfile.open('w') as output:
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -467,6 +467,11 @@ def new_checkpoint(state, number):
                      and item.get('base_version', version) != version), None) if cursor >= len(TOPICS) else None
     if deferred:
         cursor = deferred['cursor']
+    diagnostics = load(BASE/'diagnostics.json', {})
+    observations = diagnostics.get('observations', []) if diagnostics.get('version') == version else []
+    if not deferred and cursor >= len(TOPICS)-1 and review_lens(cursor)[0] == ['core.js'] and observations and all(item.get('current_passed') is True for item in observations):
+        # 已通过的有限核心探测不值得让小模型反复猜测缺陷，继续下一项可观测改进。
+        cursor += 1
     return {'base_version': version, 'cursor': cursor,
             'next_cursor': state.get('topic_index', 0) if deferred else cursor+1,
             'task': TOPICS[cursor][0] if cursor < len(TOPICS) else 'self-review',
@@ -492,6 +497,11 @@ def make_prompt(cp, candidate, files=None):
     if files == ['acceptance.json']:
         return acceptance_prompt(cp, candidate)
     instruction = VIEW_PLANS[cp['task']] if cp['task'] in VIEW_PLANS and files != ['core.js'] else PLANS.get(cp['task'], (None, detail))[1]
+    diagnostics = load(BASE/'diagnostics.json', {})
+    defects = ([item for item in diagnostics.get('observations', []) if item.get('current_passed') is False and 'current' in item]
+               if cp['task']=='self-review' and files==['core.js'] and diagnostics.get('version')==cp.get('base_version') else [])
+    if defects:
+        instruction = 'Repair ONLY this measured defect: '+json.dumps(defects[0],ensure_ascii=False)+'. The scenario is reproducible: current is the observed value and check is the required condition. Make ONE short exact edit immediately. Do not audit other code, choose another task, or read unrelated files. The complete core source follows.'
     text = f"Task ID: {cp['task']}. {instruction}\n"
     text += 'Edit only ' + ', '.join('game/'+f for f in files) + '. Source is included below; do not survey other files. Make minimal edits and finish normally. Preserve all existing behavior.\n'
     text += 'Workspace root is /workspace. Supporting source is READ-ONLY: '+', '.join('game/'+f for f in SOURCE_FILES if f not in files)+'. At most FOUR permitted targeted reads if needed, default 120 lines (maximum 160); directory reads and NOTES.md are unavailable. The current small dependency files can be read completely. Use the supplied source first.\n'
@@ -509,7 +519,7 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
         elif cp['task'] in VIEW_PLANS:
             text += 'CURRENT STAGE: core.js has ALREADY passed its feature tests and exposes the fields specified above. Only implement display/controls in this file; do not duplicate game rules in the UI.\n'
     else:
-        text += 'IMPLEMENTATION STAGE ONLY. Do not write acceptance.json or NOTES.md. A separate stage will produce the checks after this source passes regression. Choose one small observable improvement; preserve all existing behavior.\n'
+        text += 'IMPLEMENTATION STAGE ONLY. Do not write acceptance.json or NOTES.md. A separate stage will produce the checks after this source passes regression. '+('Implement ONLY the measured repair above; do not choose other tasks.' if defects else 'Choose one small observable improvement; preserve all existing behavior.')+'\n'
         text += 'The controller measures real visible UI/Canvas differences and supplies proof automatically when possible. Prefer an actual visible instruction, useful accessibility attribute, or clear rendering improvement. A JS variable name is NOT an element ID. Adding only an ID, comments or unused state is not an improvement.\n'
         text += 'Choose a change provable by a core state scenario (initial time/score/entities plus steps), real UI text/visibility/accessibility attributes, or a Canvas difference visible in the ready/first playing frame. Late-only cosmetic changes cannot be proved by a default first-frame screenshot.\n'
         text += 'Supported UI proof attributes: '+', '.join(UI_ATTRIBUTES)+'. Do not choose an improvement requiring unsupported checks.\n'
@@ -534,7 +544,6 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
         feedback = load(BASE/'public/state.json', {}).get('review_feedback', {}).get(','.join(checkpoint_files(cp)), {})
         if feedback.get('hint') and feedback.get('baseline') == cp.get('base_version'):
             text += '\nThis focus failed previously on the SAME published source. Avoid repeating that approach: '+feedback['hint']+'\n'
-        diagnostics = load(BASE/'diagnostics.json', {})
         if 'core.js' in files and diagnostics.get('version') == cp.get('base_version'):
             violations = [item for item in diagnostics.get('observations', []) if item.get('current_passed') is False and 'current' in item]
             if violations:
@@ -720,7 +729,7 @@ def main():
     secrets = [Path(cfg['model_key']).read_text().strip(), (BASE / 'control/api-key').read_text().strip()]
     state = release.recover(BASE) or load(BASE / 'public/state.json', {'round': 0, 'accepted': 0, 'rejected': 0, 'history': [], 'tokens': 0})
     state.update({'started_at': cfg['started_at'], 'deadline': cfg['deadline'], 'model': 'qwen3.6-35b-a3b-q3_k_m',
-                  'workflow_version': 8, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3, 'max_reads_per_stage': 4, 'read_lines': 120}})
+                  'workflow_version': 9, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3, 'max_reads_per_stage': 4, 'read_lines': 120}})
     cp = load(BASE / 'checkpoint.json', {})
     clean_container()
     try:

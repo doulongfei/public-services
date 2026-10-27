@@ -70,6 +70,7 @@ export function coreProofs(before, after) {
   const quiet={spawn:999,shot:999};
   const probes=[
     {kind:'core',initial:quiet,steps:180,path:'waveNotice.life',op:'gte',value:0},
+    {kind:'core',initial:{...quiet,time:19.99},steps:180,path:'waveNotice.life',op:'gte',value:0},
     {kind:'core',initial:{...quiet,shield:{active:false,cooldown:.01}},path:'shield.cooldown',op:'gte',value:0},
     {kind:'core',initial:{...quiet,hp:99,pickups:[{kind:'health',x:450,y:300,r:8,life:1}]},path:'hp',op:'lte',value:100},
     {kind:'core',initial:{...quiet,hp:1,enemies:[{x:450,y:300,hp:1,r:11,speed:0}],pickups:[{kind:'health',x:450,y:300,r:8,life:1}]},path:'phase',op:'eq',value:'over'},

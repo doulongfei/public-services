@@ -32,7 +32,7 @@ test('核心证明只接受既有玩法不变量的修复，不接受添加无�
     step(state,dt){if(state.waveNotice)state.waveNotice.life=clamp?Math.max(0,state.waveNotice.life-dt):state.waveNotice.life-dt;},
   });
   const result=coreProofs(fixture(false),fixture(true));
-  assert.equal(result.checks.length,1);assert.equal(result.checks[0].path,'waveNotice.life');
+  assert.equal(result.checks.length,2);assert.equal(result.checks[0].path,'waveNotice.life');
   assert.deepEqual(coreProofs(fixture(true),fixture(true)).checks,[]);
   assert.deepEqual(coreProofs(fixture(false,false),fixture(true)).checks,[]);
 });

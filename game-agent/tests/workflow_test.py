@@ -523,8 +523,19 @@ class Workflow(unittest.TestCase):
             {'check':{'path':'hp'},'current':100,'current_passed':True}]})
         prompt=self.runner.make_prompt(cp,self.base/'history')
         self.assertIn('MEASURED BASELINE DEFECTS',prompt);self.assertIn('"current": -0.01',prompt)
+        self.assertIn('Repair ONLY this measured defect',prompt.splitlines()[0]);self.assertIn('do not choose other tasks',prompt)
         self.runner.atomic(self.base/'diagnostics.json',{'version':'different','observations':[]})
         self.assertNotIn('MEASURED BASELINE DEFECTS',self.runner.make_prompt(cp,self.base/'history'))
+
+    def test_healthy_current_core_probes_rotate_without_speculative_model_audit(self):
+        state={**self.state,'topic_index':51}
+        self.runner.atomic(self.base/'diagnostics.json',{'version':self.first,'observations':[{'current_passed':True}]})
+        cp=self.runner.new_checkpoint(state,1)
+        self.assertEqual(cp['cursor'],52);self.assertEqual(self.runner.checkpoint_files(cp),['render.js'])
+        self.runner.atomic(self.base/'diagnostics.json',{'version':self.first,'observations':[{'current_passed':False}]})
+        self.assertEqual(self.runner.new_checkpoint(state,1)['cursor'],51)
+        self.runner.atomic(self.base/'diagnostics.json',{'version':'different','observations':[{'current_passed':True}]})
+        self.assertEqual(self.runner.new_checkpoint(state,1)['cursor'],51)
 
     def test_unchanged_ui_output_does_not_ask_model_to_invent_proof(self):
         candidate=self.base/'rounds/00001/candidate'
