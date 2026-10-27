@@ -111,8 +111,13 @@ try{
     const paused=structuredClone(playing);paused.phase='paused';
     for(const state of [createState(),playing,paused]){
      const canvas=document.createElement('canvas');canvas.width=WIDTH;canvas.height=HEIGHT;
-     const before=JSON.stringify(state);render(canvas.getContext('2d'),state);
-     if(JSON.stringify(state)!==before)throw Error('Renderer must not mutate core state: '+state.phase);
+     const ctx=canvas.getContext('2d'),save=ctx.save.bind(ctx),restore=ctx.restore.bind(ctx);let depth=0;
+     ctx.save=()=>{depth++;save();};ctx.restore=()=>{depth--;if(depth<0)throw Error('Canvas restore without matching save');restore();};
+     for(let frame=0;frame<3;frame++){
+      const before=JSON.stringify(state),matrix=JSON.stringify(ctx.getTransform().toJSON());render(ctx,state);
+      if(JSON.stringify(state)!==before)throw Error('Renderer must not mutate core state: '+state.phase);
+      if(depth!==0||JSON.stringify(ctx.getTransform().toJSON())!==matrix)throw Error('Renderer must restore Canvas transform and balance save/restore: '+state.phase+' frame='+frame+' depth='+depth);
+     }
     }
    });
   }finally{await context.close();}

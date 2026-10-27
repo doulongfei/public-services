@@ -96,15 +96,25 @@ WAVE_ANCHORS = ["const pauseMsg=document.createElement('div');", 'step(state,dt,
 # 自审的关注点与可写文件一起定义，不能重用首轮“添加既有功能”的指令。
 REVIEW_LENSES = [
     (['core.js'], 'Review core rules for ONE real timer, lifecycle, collision or state-boundary defect. Prefer a small bug demonstrable by a deterministic core scenario. Inspect timers that cross zero, entity cleanup, and consistency of existing rules; do not change balance arbitrarily or add an unused field.'),
-    (['render.js'], 'Review current Canvas rendering for ONE missing, useful visual cue or readability improvement visible in the ready or first playing frame. Choose a detail not already present. Rendering must remain read-only and inexpensive. Do not add decorative changes that hide useful information.'),
-    (['main.js'], 'Review existing DOM/HUD accessibility and explanations for ONE missing useful improvement visible in ready/playing/paused. Preserve controls, existing accessible button names and all game rules. Use a real element ID and observable text or an allowed accessibility attribute for proof.'),
-    (['index.html', 'style.css'], 'Review first-run guidance and mobile readability for ONE concrete missing explanation or accessibility improvement. Preserve existing element IDs and button names, especially 开始游戏 →. Prove a useful visible text or accessibility change on a real element ID; CSS-only changes cannot be proved by the Canvas check.'),
+    (['render.js'], 'Implement one small visible Canvas improvement now. Keep drawing read-only and inexpensive, balance every save/restore, and preserve all existing game rules and controls. Do not perform a general audit.'),
+    (['main.js'], 'Implement ONE useful, visible HUD explanation or accessibility improvement now. Preserve controls, existing accessible button names and game rules. Use a real element ID for new status text or a supported accessibility attribute. Do not audit unrelated code.'),
+    (['index.html', 'style.css'], 'Implement ONE concise missing or corrected first-run instruction now. Preserve IDs and button names, especially 开始游戏 →. Keep the text useful and mobile-friendly; add a small paragraph instead of changing controls. Do not perform a broad code review.'),
+]
+RENDER_GOALS = [
+    'Improve the player cockpit/engine outline contrast with one small local Canvas edit. Keep it readable in the first playing frame; preserve existing sprites and avoid large glow or flashing.',
+    'Add or refine a slim next-wave progress bar inside the upper-right arena. Read the existing time and wave fields; waves last 20 seconds. Clamp progress, use save/restore and keep controls unobscured. Do not add timers or mutate state.',
+    'Make the existing ship health bar readable at full health as well as after damage, with a bounded fill ratio from hp/maxHp. Preserve the existing bar position and game rules. Make one small focused edit.',
+    'Add or refine a subtle arena boundary outline so players can see the movement limits. Use existing WIDTH/HEIGHT and Canvas styles, preserve all entities, and avoid covering the ship or HUD.',
 ]
 SOURCE_FILES = ['core.js', 'render.js', 'main.js', 'index.html', 'style.css']
 
 
 def review_lens(cursor):
-    return REVIEW_LENSES[max(0, cursor-(len(TOPICS)-1)) % len(REVIEW_LENSES)]
+    offset=max(0, cursor-(len(TOPICS)-1))
+    files,detail=REVIEW_LENSES[offset % len(REVIEW_LENSES)]
+    if files == ['render.js']:
+        detail += ' Concrete goal: '+RENDER_GOALS[(offset//len(REVIEW_LENSES)) % len(RENDER_GOALS)]
+    return files,detail
 
 
 def checkpoint_files(cp):
@@ -502,6 +512,13 @@ def make_prompt(cp, candidate, files=None):
                if cp['task']=='self-review' and files==['core.js'] and diagnostics.get('version')==cp.get('base_version') else [])
     if defects:
         instruction = 'Repair ONLY this measured defect: '+json.dumps(defects[0],ensure_ascii=False)+'. The scenario is reproducible: current is the observed value and check is the required condition. Make ONE short exact edit immediately. Do not audit other code, choose another task, or read unrelated files. The complete core source follows.'
+    directed=bool(defects)
+    if cp['task']=='self-review' and files==['main.js'] and re.search(r"setAttribute\(\s*['\"]aria-label['\"]\s*,\s*['\"]剩余时间",(candidate/'game/main.js').read_text()):
+        instruction='Correct the time HUD aria-label: time counts UP and the visible header says 存活时间, but aria-label incorrectly says 剩余时间. Change ONLY that misleading prefix to 存活时间. Preserve formatting, all controls and button names. Make one short edit immediately; no dependency survey is needed.'
+        directed=True
+    if cp['task']=='self-review' and 'index.html' in files and '生命+20' in (candidate/'game/index.html').read_text() and 's.hp+25' in (candidate/'game/core.js').read_text():
+        instruction='Correct one verified instruction mismatch: the guide says health pickups restore 20, but core.js restores 25. Change ONLY the guide value to 25. Preserve the HTML button markup, IDs, P/15/30 instructions and all gameplay. Make one short edit now; the controller already verified both values.'
+        directed=True
     text = f"Task ID: {cp['task']}. {instruction}\n"
     text += 'Edit only ' + ', '.join('game/'+f for f in files) + '. Source is included below; do not survey other files. Make minimal edits and finish normally. Preserve all existing behavior.\n'
     text += 'Workspace root is /workspace. Supporting source is READ-ONLY: '+', '.join('game/'+f for f in SOURCE_FILES if f not in files)+'. At most FOUR permitted targeted reads if needed, default 120 lines (maximum 160); directory reads and NOTES.md are unavailable. The current small dependency files can be read completely. Use the supplied source first.\n'
@@ -519,7 +536,7 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
         elif cp['task'] in VIEW_PLANS:
             text += 'CURRENT STAGE: core.js has ALREADY passed its feature tests and exposes the fields specified above. Only implement display/controls in this file; do not duplicate game rules in the UI.\n'
     else:
-        text += 'IMPLEMENTATION STAGE ONLY. Do not write acceptance.json or NOTES.md. A separate stage will produce the checks after this source passes regression. '+('Implement ONLY the measured repair above; do not choose other tasks.' if defects else 'Choose one small observable improvement; preserve all existing behavior.')+'\n'
+        text += 'IMPLEMENTATION STAGE ONLY. Do not write acceptance.json or NOTES.md. A separate stage will produce the checks after this source passes regression. '+('Implement ONLY the directed repair above; do not choose other tasks.' if directed else 'Implement only the concrete goal above; preserve all existing behavior.')+'\n'
         text += 'The controller measures real visible UI/Canvas differences and supplies proof automatically when possible. Prefer an actual visible instruction, useful accessibility attribute, or clear rendering improvement. A JS variable name is NOT an element ID. Adding only an ID, comments or unused state is not an improvement.\n'
         text += 'Give a useful new or improved status element a real unique ID so the browser can measure its actual ARIA/text change. An ID alone still does not count as improvement.\n'
         text += 'Choose a change provable by a core state scenario (initial time/score/entities plus steps), real UI text/visibility/accessibility attributes, or a Canvas difference visible in the ready/first playing frame. Late-only cosmetic changes cannot be proved by a default first-frame screenshot.\n'
