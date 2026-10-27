@@ -10,6 +10,8 @@ test('界面证明只来自真实可见差异，忽略无变化、隐藏元素�
   const proof=uiProofs([node('guide','旧说明')],[node('guide','新的有效说明')],'ready');
   assert.deepEqual(proof,[{kind:'ui',selector:'#guide',phase:'ready',op:'contains',property:'text',value:'新的有效说明'}]);
   assert.deepEqual(uiProofs([],[],'playing'),[]);
+  const revealed=uiProofs([node('guide','操作说明',{},false)],[node('guide','操作说明')],'ready');
+  assert.deepEqual(revealed,[{kind:'ui',selector:'#guide',phase:'ready',op:'eq',property:'visible',value:true}]);
   const oldText='很长的已有说明。'.repeat(8)+'补给恢复20点生命。'+'其他说明。'.repeat(8);
   const newText=oldText.replace('20点','25点');
   const focused=uiProofs([node('guide',oldText)],[node('guide',newText)],'ready')[0];

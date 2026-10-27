@@ -32,13 +32,13 @@ export async function observeScene(page) {
         if (value !== null && value.length <= 300) values[name] = value;
       }
       return {id:element.id,tag:element.tagName.toLowerCase(),text:element.textContent,visible,attributes:values};
-    }).filter(node => node.visible && node.text.length <= 500);
+    }).filter(node => (node.visible || node.id) && node.text.length <= 500);
   }, proofAttributes);
 }
 
 export function uiProofs(before, after, phase) {
   const oldIds = new Map(before.filter(node=>node.id).map(node=>[node.id,node]));
-  const oldSemantics = new Set(before.map(signature));
+  const oldSemantics = new Set(before.filter(node=>node.visible).map(signature));
   const candidates = [];
   for (const node of [...after].sort((a,b)=>a.text.length-b.text.length)) {
     if (!node.visible || !/^[a-zA-Z][a-zA-Z0-9_-]{0,48}$/.test(node.id)) continue;
@@ -46,6 +46,7 @@ export function uiProofs(before, after, phase) {
     // 只给原有元素加 ID 不会改善界面，不应自动算作新功能。
     if (!old && oldSemantics.has(signature(node))) continue;
     const base = {kind:'ui',selector:'#'+node.id,phase,op:'eq'};
+    if(old && !old.visible && (node.text.trim()||Object.keys(node.attributes).length))candidates.push({...base,property:'visible',value:true});
     if (!protectedIds.has(node.id) && node.text.trim() && node.text.length <= 300 && node.text !== old?.text) {
       const value=changedText(old?.text,node.text);
       if(value)candidates.push({...base,op:'contains',property:'text',value});
