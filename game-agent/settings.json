@@ -4,7 +4,7 @@
   },
   "compaction": {
     "enabled": true,
-    "reserveTokens": 6144,
+    "reserveTokens": 4096,
     "keepRecentTokens": 2048
   },
   "branchSummary": {

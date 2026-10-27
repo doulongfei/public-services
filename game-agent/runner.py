@@ -494,7 +494,7 @@ def make_prompt(cp, candidate, files=None):
     instruction = VIEW_PLANS[cp['task']] if cp['task'] in VIEW_PLANS and files != ['core.js'] else PLANS.get(cp['task'], (None, detail))[1]
     text = f"Task ID: {cp['task']}. {instruction}\n"
     text += 'Edit only ' + ', '.join('game/'+f for f in files) + '. Source is included below; do not survey other files. Make minimal edits and finish normally. Preserve all existing behavior.\n'
-    text += 'Workspace root is /workspace. Supporting source is READ-ONLY: '+', '.join('game/'+f for f in SOURCE_FILES if f not in files)+'. At most TWO targeted reads if needed; directory reads and NOTES.md are unavailable. Use the supplied source first.\n'
+    text += 'Workspace root is /workspace. Supporting source is READ-ONLY: '+', '.join('game/'+f for f in SOURCE_FILES if f not in files)+'. At most FOUR permitted targeted reads if needed, default 120 lines (maximum 160); directory reads and NOTES.md are unavailable. The current small dependency files can be read completely. Use the supplied source first.\n'
     text += 'CONTROL CONTRACT: #start is ONE existing button. Its initial visible text is 开始游戏 →; main.js changes the SAME button to 再次出航 → on game over. Keep its published HTML markup, without aria-label or aria-labelledby; REMOVE those attributes if an earlier candidate introduced them. Do not add a separate restart button. Preserve every existing button name. Add explanations to a separate paragraph instead.\n'
     if cp['task'] in PLANS:
         text += 'The controller supplies acceptance.json and records your summary in NOTES.md. You only edit game source; do not write metadata.\n'
@@ -715,7 +715,7 @@ def main():
     secrets = [Path(cfg['model_key']).read_text().strip(), (BASE / 'control/api-key').read_text().strip()]
     state = release.recover(BASE) or load(BASE / 'public/state.json', {'round': 0, 'accepted': 0, 'rejected': 0, 'history': [], 'tokens': 0})
     state.update({'started_at': cfg['started_at'], 'deadline': cfg['deadline'], 'model': 'qwen3.6-35b-a3b-q3_k_m',
-                  'workflow_version': 7, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3}})
+                  'workflow_version': 8, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3, 'max_reads_per_stage': 4, 'read_lines': 120}})
     cp = load(BASE / 'checkpoint.json', {})
     clean_container()
     try:

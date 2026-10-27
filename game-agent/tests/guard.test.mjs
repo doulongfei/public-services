@@ -133,3 +133,26 @@ test('连续三次无效工具请求提前终止，避免重复读文件耗尽�
   for(let i=0;i<3;i++)await handlers.tool_call({toolName:'read',input:{path:'/workspace/forbidden'}},{abort:()=>aborted++});
   assert.equal(aborted,1);
 });
+
+test('依赖文件可完整读取，拒绝路径不占有效读取额度且第五次有效读取被限制',async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'starharbor-read-budget-'));
+  const previous=process.env.STARHARBOR_FILES;
+  try{
+    fs.mkdirSync(root+'/game');fs.writeFileSync(root+'/game/core.js',Array.from({length:130},(_,i)=>`// line ${i}`).join('\n'));
+    process.env.STARHARBOR_FILES=JSON.stringify(['game/core.js']);
+    const handlers={};guard({on:(name,callback)=>{handlers[name]=callback;}},{root});
+    const ctx={abort:()=>assert.fail('A single refused read must not abort')};
+    assert.equal((await handlers.tool_call({toolName:'read',input:{path:'outside'}},ctx)).block,true);
+    for(let i=0;i<4;i++){
+      const event={toolName:'read',input:{path:'game/core.js'}};
+      assert.equal(await handlers.tool_call(event,ctx),undefined);
+      assert.equal(event.input.limit,120);
+    }
+    assert.match((await handlers.tool_call({toolName:'read',input:{path:'game/core.js'}},ctx)).reason,/Four permitted reads/);
+    const event={toolName:'read',input:{path:'game/core.js',limit:10000}};
+    checkFile(event,root,['game/core.js']);assert.equal(event.input.limit,160);
+  }finally{
+    if(previous===undefined)delete process.env.STARHARBOR_FILES;else process.env.STARHARBOR_FILES=previous;
+    fs.rmSync(root,{recursive:true,force:true});
+  }
+});

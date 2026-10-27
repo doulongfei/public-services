@@ -58,7 +58,7 @@ export function checkFile(event, root, files, anchors=[], options={}) {
       edit.oldText = alignIndentation(content, old);
     }
   }
-  if (event.toolName === 'read') event.input.limit = Math.min(event.input.limit ?? 70, 100);
+  if (event.toolName === 'read') event.input.limit = Math.max(1, Math.min(event.input.limit ?? 120, 160));
   return undefined;
 }
 
@@ -94,7 +94,8 @@ export function acceptanceError(content, task) {
   return null;
 }
 
-export default function guard(pi) {
+export default function guard(pi, overrides={}) {
+  const root=overrides.root || '/workspace';
   const files = JSON.parse(process.env.STARHARBOR_FILES || '[]');
   const anchors = JSON.parse(process.env.STARHARBOR_INSERT_ANCHORS || '[]');
   const options = {task:process.env.STARHARBOR_TASK,readFiles:JSON.parse(process.env.STARHARBOR_READ_FILES||'[]')};
@@ -112,9 +113,8 @@ export default function guard(pi) {
       ctx.abort(); return {block: true, reason: 'Round tool budget exhausted.'};
     }
     if (!['read', 'edit', 'write'].includes(event.toolName)) return {block: true, reason: 'Only file tools are permitted.'};
-    const result = event.toolName === 'read' && ++reads > 2
-      ? {block:true,reason:'Read budget reached. Source/diff is in the prompt: make the requested edit/write and finish.'}
-      : checkFile(event, '/workspace', files, anchors, options);
+    let result=checkFile(event, root, files, anchors, options);
+    if (!result?.block && event.toolName==='read' && ++reads>4) result={block:true,reason:'Four permitted reads used. Use the complete source and tool results already provided; make the requested edit/write and finish.'};
     blocked = result?.block ? blocked+1 : 0;
     if (blocked>=3) {
       process.stderr.write(JSON.stringify({type:'guard_limit',reason:'repeated_tool_error',limit:3})+'\n');
