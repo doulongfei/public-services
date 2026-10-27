@@ -61,6 +61,12 @@ def validate_check(check):
             raise ValueError('Unsupported core input')
     if check.get('op') not in ('eq', 'gt', 'gte', 'lt', 'lte', 'contains', 'exists'):
         raise ValueError('Unsupported assertion operator')
+    if check['op'] != 'exists' and 'value' not in check:
+        raise ValueError('Comparison requires an explicit value; never compare with undefined')
+    if check['op'] in ('gt', 'gte', 'lt', 'lte') and type(check['value']) not in (int, float):
+        raise ValueError('Numeric comparisons require a finite numeric value')
+    if check['kind'] == 'ui' and check.get('property') == 'attribute' and check['op'] == 'eq' and check.get('value') is not None and not isinstance(check['value'], str):
+        raise ValueError('DOM attribute equality requires a string value, not a boolean or number')
     if not isinstance(check.get('value'), (str, int, float, bool, type(None))):
         raise ValueError('Assertion value must be a scalar')
     if isinstance(check.get('value'), float) and not math.isfinite(check['value']):

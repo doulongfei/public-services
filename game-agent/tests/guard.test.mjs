@@ -118,6 +118,15 @@ test('UI 声明不能静默忽略核心输入或自行发明场景动作', () =>
   assert.match(validate({kind:'visual',selector:'#arena',input:{shield:true}}),/Unsupported visual check fields/);
 });
 
+test('缺少比较值、数值类型错误和布尔属性值在写文件前拒绝',()=>{
+  const check={kind:'core',path:'wave',op:'gte'};
+  const validate=c=>acceptanceError(JSON.stringify({task:'self-review',checks:[c]}),'self-review');
+  assert.match(validate(check),/explicit value/);
+  for(const value of [null,true,'1'])assert.match(validate({...check,value}),/numeric value/);
+  assert.equal(validate({...check,value:1}),null);
+  assert.match(validate({kind:'ui',selector:'#arena',property:'attribute',attribute:'aria-pressed',op:'eq',value:false}),/string value/);
+});
+
 test('连续三次无效工具请求提前终止，避免重复读文件耗尽半小时', async () => {
   const handlers={};let aborted=0;
   guard({on:(event,callback)=>{handlers[event]=callback;}});

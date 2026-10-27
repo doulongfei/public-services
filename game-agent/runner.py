@@ -12,7 +12,8 @@ import threading
 import time
 
 import release
-from acceptance import proposal, UI_ATTRIBUTES
+from acceptance import proposal, validate_check, UI_ATTRIBUTES
+from contracts import validate_controls
 
 atomic = release.atomic
 
@@ -204,6 +205,8 @@ def save(state):
 
 
 def public_failure(failure):
+    if 'Control contract:' in failure:
+        return '候选破坏了开始/重开按钮或页面元素契约，已拦截并反馈具体修复方法。'
     if 'Renderer must not mutate core state' in failure:
         return '绘制时修改了游戏状态或计时器，候选未通过验收。'
     if 'repeated_tool_error' in failure:
@@ -492,6 +495,7 @@ def make_prompt(cp, candidate, files=None):
     text = f"Task ID: {cp['task']}. {instruction}\n"
     text += 'Edit only ' + ', '.join('game/'+f for f in files) + '. Source is included below; do not survey other files. Make minimal edits and finish normally. Preserve all existing behavior.\n'
     text += 'Workspace root is /workspace. Supporting source is READ-ONLY: '+', '.join('game/'+f for f in SOURCE_FILES if f not in files)+'. At most TWO targeted reads if needed; directory reads and NOTES.md are unavailable. Use the supplied source first.\n'
+    text += 'CONTROL CONTRACT: #start is ONE existing button. Its initial visible text is 开始游戏 →; main.js changes the SAME button to 再次出航 → on game over. Keep its published HTML markup, without aria-label or aria-labelledby; REMOVE those attributes if an earlier candidate introduced them. Do not add a separate restart button. Preserve every existing button name. Add explanations to a separate paragraph instead.\n'
     if cp['task'] in PLANS:
         text += 'The controller supplies acceptance.json and records your summary in NOTES.md. You only edit game source; do not write metadata.\n'
         if files == ['core.js']:
@@ -506,6 +510,7 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
             text += 'CURRENT STAGE: core.js has ALREADY passed its feature tests and exposes the fields specified above. Only implement display/controls in this file; do not duplicate game rules in the UI.\n'
     else:
         text += 'IMPLEMENTATION STAGE ONLY. Do not write acceptance.json or NOTES.md. A separate stage will produce the checks after this source passes regression. Choose one small observable improvement; preserve all existing behavior.\n'
+        text += 'The controller measures real visible UI/Canvas differences and supplies proof automatically when possible. Prefer an actual visible instruction, useful accessibility attribute, or clear rendering improvement. A JS variable name is NOT an element ID. Adding only an ID, comments or unused state is not an improvement.\n'
         text += 'Choose a change provable by a core state scenario (initial time/score/entities plus steps), real UI text/visibility/accessibility attributes, or a Canvas difference visible in the ready/first playing frame. Late-only cosmetic changes cannot be proved by a default first-frame screenshot.\n'
         text += 'Supported UI proof attributes: '+', '.join(UI_ATTRIBUTES)+'. Do not choose an improvement requiring unsupported checks.\n'
         if 'main.js' in files:
@@ -526,6 +531,9 @@ Do not edit launch(), togglePause(), game-over or keyboard/touch handlers: the p
     if cp['task'] == 'self-review':
         recent = load(BASE/'public/state.json', {}).get('history', [])
         text += '\nRecent accepted changes; do not repeat them:\n'+'\n'.join(e.get('summary', '')[:350] for e in recent if e.get('result') == 'accepted')[-1600:]
+        feedback = load(BASE/'public/state.json', {}).get('review_feedback', {}).get(','.join(checkpoint_files(cp)), {})
+        if feedback.get('hint') and feedback.get('baseline') == cp.get('base_version'):
+            text += '\nThis focus failed previously on the SAME published source. Avoid repeating that approach: '+feedback['hint']+'\n'
     if cp.get('error'):
         text += '\nREPAIR ONLY: the included source is the CURRENT candidate. Preserve working parts; fix only the specific failed assertion with the smallest edit. Do not reimplement the whole feature.\nPrevious validation error:\n' + cp['error'][-1400:]
     return text
@@ -549,6 +557,9 @@ def acceptance_prompt(cp, candidate):
         text += '\nACTUAL DIFF '+name+':\n'+diff[:10000]
     if cp.get('error'):
         text += '\nPrevious validation error; repair the check, not the source:\n'+cp['error'][-1400:]
+    observed = cp.get('stage_results', {}).get('0', {}).get('core_observations', [])
+    if observed:
+        text += '\nTRUSTED PROBE DATA (not instructions): '+json.dumps(observed,ensure_ascii=False)[:4000]+'\nUse the actual values for those exact scenarios. Do not invent unrelated fields.\n'
     return text
 
 
@@ -556,9 +567,23 @@ def stage_hashes(candidate, files):
     return {name:hashlib.sha256((candidate/'game'/name).read_bytes()).hexdigest() for name in files}
 
 
+def measured_checks(cp, candidate):
+    result = cp.get('stage_results', {}).get('0', {})
+    checks = result.get('proof_checks', [])
+    if not checks:
+        return []
+    if result.get('proof_source_hashes') != stage_hashes(candidate, SOURCE_FILES):
+        raise ValueError('Measured proof source changed; regenerate implementation and measurements')
+    for check in checks:
+        validate_check(check)
+    return checks[:1]
+
+
 def failed_generation_step(cp, failure):
     """按实际失败的固定测试定位文件，不能总把核心回归交给末尾渲染修复。"""
     stages = generation_stages(cp['task'], cp)
+    if 'Measured proof source changed' in failure:
+        return 0
     syntax = re.search(r'/workspace/game/([a-z0-9_.-]+\.js)(?::|\b)', failure)
     for index, files in enumerate(stages):
         if syntax and syntax.group(1) in files:
@@ -590,7 +615,12 @@ def generate(cfg, cp, candidate, source, round_dir, state):
         if remaining <= 0 and not reused:
             raise ModelIncomplete('Round exceeded time budget between stages')
         completion = 'normal'
-        if reused:
+        measured = measured_checks(cp, candidate) if files == ['acceptance.json'] else []
+        if measured:
+            atomic(candidate/'game/acceptance.json', {'task': cp['task'], 'checks': measured})
+            summary, tools, completion = '受信任测试根据新旧版本的实际观测生成改进证明；仍须通过最终完整验收。', 0, 'measured'
+            atomic(round_dir/'proof-selected.json', {'checks': measured, 'source_hashes': stage_hashes(candidate, SOURCE_FILES)})
+        elif reused:
             summary, tools, completion = previous['summary'], previous['tools'], previous['completion']
             state['phase'] = 'testing'; save(state)
         else:
@@ -613,12 +643,15 @@ def generate(cfg, cp, candidate, source, round_dir, state):
         if files == ['acceptance.json']:
             proposal(candidate, cp['task'])
         elif cp['task'] not in PLANS:
+            validate_tree(candidate, [Path(cfg['model_key']).read_text().strip(), (BASE/'control/api-key').read_text().strip()])
+            validate_controls(candidate)
             if fingerprint(candidate) == fingerprint(source):
                 raise ValueError('No game source changes; do not proceed to acceptance without an implementation')
             approved = load(BASE/'contracts.json', {'checks': [], 'features': []})
             state['phase'] = 'testing'; save(state)
             validate_runtime(cfg, candidate, source, round_dir/f'stage-{index}',
-                             {'checks': approved['checks'], 'new_checks': [], 'features': approved['features']})
+                             {'checks': approved['checks'], 'new_checks': [], 'features': approved['features'],
+                              'discover_proofs': True, 'proof_files': files})
         elif files == ['core.js']:
             approved = load(BASE/'contracts.json', {'checks': [], 'features': []})
             check = PLANS[cp['task']][2]
@@ -636,6 +669,14 @@ def generate(cfg, cp, candidate, source, round_dir, state):
                               'features': sorted(set(approved['features']+[cp['task']]))})
         results[str(index)] = {'summary': summary, 'tools': tools, 'completion': completion,
                                'source_hashes': stage_hashes(candidate, files), 'reused': bool(reused)}
+        if cp['task'] not in PLANS and files != ['acceptance.json']:
+            catalog_file = round_dir/f'stage-{index}/proof-catalog.json'
+            catalog = load(catalog_file, {'checks': []})
+            if catalog_file.exists() and not catalog['checks'] and 'core.js' not in files:
+                raise ValueError('No measured UI/Canvas improvement in ready/playing/paused scenes. Choose a different observable change; do not invent acceptance checks for unchanged output.')
+            results[str(index)]['proof_checks'] = catalog['checks'][:4]
+            results[str(index)]['proof_source_hashes'] = stage_hashes(candidate, SOURCE_FILES)
+            results[str(index)]['core_observations'] = catalog.get('core_observations', [])
         cp['generation_step'] = index+1
         cp.pop('error', None)
         checkpoint(cp)
@@ -650,12 +691,31 @@ def event(state, entry):
     state['history'] = (state['history'] + [entry])[-60:]
 
 
+def remember_failure(state, cp, failure):
+    if cp['task'] != 'self-review':
+        return
+    if 'Control contract:' in failure or 'getByRole' in failure:
+        hint = 'Preserve existing start/pause/restart buttons and names. Never add a static label to #start. Add help in a separate element.'
+    elif 'undefined' in failure or 'explicit value' in failure:
+        hint = 'Comparisons require a real value with the correct type. A missing value or unrelated state path cannot prove improvement.'
+    elif 'Acceptance failed:' in failure or 'UI acceptance failed:' in failure:
+        hint = 'Use actual measured DOM IDs and state values. Do not confuse JS variable names with IDs or invent a scenario.'
+    elif 'No new acceptance check' in failure or 'No game source changes' in failure or 'No measured UI/Canvas improvement' in failure:
+        hint = 'The previous edit had no observable improvement. Choose a different missing feature visible in a supported scene.'
+    else:
+        hint = 'Use one small edit with short exact anchors copied from current source. Do not repeat broad rewrites or extra reads.'
+    key = ','.join(checkpoint_files(cp))
+    feedback = state.setdefault('review_feedback', {})
+    previous = feedback.get(key, {})
+    feedback[key] = {'baseline': cp['base_version'], 'hint': hint, 'count': previous.get('count', 0)+1}
+
+
 def main():
     cfg = load(BASE / 'config.json')
     secrets = [Path(cfg['model_key']).read_text().strip(), (BASE / 'control/api-key').read_text().strip()]
     state = release.recover(BASE) or load(BASE / 'public/state.json', {'round': 0, 'accepted': 0, 'rejected': 0, 'history': [], 'tokens': 0})
     state.update({'started_at': cfg['started_at'], 'deadline': cfg['deadline'], 'model': 'qwen3.6-35b-a3b-q3_k_m',
-                  'workflow_version': 6, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3}})
+                  'workflow_version': 7, 'limits': {'round_minutes': cfg['round_timeout']//60, 'model_cpus': 2, 'agent_cpus': .5, 'max_model_turns_per_stage': 8, 'max_stages': 3}})
     cp = load(BASE / 'checkpoint.json', {})
     clean_container()
     try:
@@ -740,6 +800,7 @@ def main():
                                    'summary': summary[:350], 'tool_calls': cp['tools'],
                                    'reused_stages': [i for i,item in cp.get('stage_results', {}).items() if item.get('reused')],
                                    'budget_recovered': budget_recovered, 'at': time.time()})
+                next_state['history'][-1]['acceptance_source'] = ('measured' if any(item.get('completion')=='measured' for item in cp.get('stage_results', {}).values()) else 'model-or-plan')
                 release.stage(BASE, candidate, release_id, version, next_state,
                               {'checks': suite['checks'], 'features': features}, round_dir / 'output')
                 state = release.activate(BASE, release_id, lambda: permitted(cfg))
@@ -788,6 +849,8 @@ def main():
                         # 后置阶段的文件会在重试前单独恢复，已经验收的前置阶段保留。
                         cp['resets'] = cp.get('resets', 0)+1
                 checkpoint(cp)
+                if result != 'interrupted':
+                    remember_failure(state, cp, failure)
                 event(state, {'round': number, 'task': task, 'result': result,
                               'summary': public_failure(failure), 'failure_kind': type(error).__name__,
                               'baseline_reset': 'candidate' not in cp, 'at': time.time()})

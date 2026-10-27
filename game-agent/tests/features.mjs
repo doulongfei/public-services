@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {coreCheck, checkDifficulty} from './checks.mjs';
+import {coreProofs} from './proofs.mjs';
 const suite=JSON.parse(await fs.readFile(process.env.CONTRACT_FILE||'/run/contracts.json','utf8'));
 const root=process.env.GAME_ROOT||'/workspace/game',oldRoot=process.env.BASELINE_ROOT||'/baseline/game';
 const core=await import(root+'/core.js'),old=await import(oldRoot+'/core.js');
@@ -94,4 +95,5 @@ for(const check of suite.new_checks.filter(c=>c.kind==='core')){
  try{coreCheck(old,check);}catch{changed.push(check);}
 }
 await fs.writeFile((process.env.OUTPUT_ROOT||'/output')+'/core-evidence.json',JSON.stringify(changed));
+if(suite.discover_proofs)await fs.writeFile((process.env.OUTPUT_ROOT||'/output')+'/core-proofs.json',JSON.stringify(coreProofs(old,core)));
 console.log('PASS: feature contracts and retained core checks');

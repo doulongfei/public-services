@@ -41,10 +41,14 @@ export function checkValue(actual, check) {
   assert.ok(ok,`Acceptance failed: ${check.path||check.selector} ${check.op} ${JSON.stringify(expected)}; got ${JSON.stringify(actual)}`);
 }
 
-export function coreCheck(core, check) {
+export function coreValue(core, check) {
   const state=core.createState();Object.assign(state,structuredClone(check.initial||{}));state.phase='playing';
   for(let i=0;i<(check.steps||1);i++)core.step(state,1/60,check.input||{},()=>.3);
   let value=state;
   for(const key of check.path.split('.'))value=value?.[key];
-  checkValue(value,check);
+  return value;
+}
+
+export function coreCheck(core, check) {
+  checkValue(coreValue(core,check),check);
 }

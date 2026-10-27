@@ -78,6 +78,9 @@ export function acceptanceError(content, task) {
       continue;
     }
     if (!['eq','gt','gte','lt','lte','contains','exists'].includes(c.op)) return 'Unsupported operator.';
+    if (c.op!=='exists'&&!Object.hasOwn(c,'value')) return 'Comparison requires an explicit value; never compare with undefined.';
+    if (['gt','gte','lt','lte'].includes(c.op)&&(typeof c.value!=='number'||!Number.isFinite(c.value))) return 'Numeric comparisons require a finite numeric value.';
+    if (c.kind==='ui'&&c.property==='attribute'&&c.op==='eq'&&c.value!==null&&typeof c.value!=='string') return 'DOM attribute equality requires a string value, not a boolean or number.';
     if (c.kind==='core') {
       if (c.steps!==undefined && (!Number.isInteger(c.steps)||c.steps<1||c.steps>4000)) return 'Core steps is an INTEGER from 1 to 4000, not a list of actions.';
       if (typeof c.path!=='string' || !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+){0,5}$/.test(c.path) || c.path.split('.').some(k=>['__proto__','prototype','constructor'].includes(k))) return 'Use an actual safe state field path.';

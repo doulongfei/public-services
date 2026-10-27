@@ -4,6 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {chromium} from '/opt/runtime/node_modules/playwright/index.mjs';
 import {checkValue, assertUiResults} from './checks.mjs';
+import {observeScene, uiProofs} from './proofs.mjs';
 
 const root=process.env.GAME_ROOT||'/workspace/game',out=process.env.OUTPUT_ROOT||'/output';
 const baseline=process.env.BASELINE_ROOT||'/baseline/game';
@@ -27,6 +28,7 @@ const server=http.createServer(async(req,res)=>{
 await new Promise(r=>server.listen(8085,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const errors=[],external=[];
+const observed={candidate:{},baseline:{}},images={candidate:{},baseline:{}};
 try{
  for(const mobile of [false,true]){
   const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000},isMobile:mobile,hasTouch:mobile,deviceScaleFactor:1});
@@ -118,7 +120,7 @@ try{
  async function readChecks(checks,old=false){
   const results=new Map();
   for(const phase of ['ready','playing','paused']){
-   const group=checks.filter(c=>(c.phase||'ready')===phase);if(!group.length)continue;
+   const group=checks.filter(c=>(c.phase||'ready')===phase);if(!group.length&&!suite.discover_proofs)continue;
    const {context,page}=await openCheck(old);
    try{
     if(phase==='playing'||phase==='paused'){
@@ -136,6 +138,10 @@ try{
       catch(error){results.set(key,{passed:false,error});}
      }
     }
+    if(suite.discover_proofs){
+     const key=old?'baseline':'candidate';observed[key][phase]=await observeScene(page);
+     if(suite.proof_files?.includes('render.js'))images[key][phase]=await page.locator('#arena').screenshot({animations:'disabled'});
+    }
    }finally{await context.close();}
   }
   return results;
@@ -144,6 +150,15 @@ try{
  assertUiResults(candidateResults);
  const evidence=JSON.parse(await fs.readFile(out+'/core-evidence.json','utf8'));
  const previousResults=await readChecks(suite.new_checks.filter(c=>c.kind!=='core'),true);
+ if(suite.discover_proofs){
+  const coreProof=suite.proof_files?.includes('core.js')?JSON.parse(await fs.readFile(out+'/core-proofs.json','utf8')):{checks:[],observations:[]};
+  const checks=[...coreProof.checks];
+  for(const phase of ['ready','playing','paused']){
+   if(suite.proof_files?.includes('render.js')&&!images.candidate[phase].equals(images.baseline[phase]))checks.push({kind:'visual',selector:'#arena',phase});
+   if(suite.proof_files?.some(file=>['main.js','index.html','style.css'].includes(file)))checks.push(...uiProofs(observed.baseline[phase],observed.candidate[phase],phase));
+  }
+  await fs.writeFile(out+'/proof-catalog.json',JSON.stringify({checks:checks.slice(0,12),core_observations:coreProof.observations,observations:observed}));
+ }
  for(const check of suite.new_checks.filter(c=>c.kind!=='core')){
   const key=JSON.stringify(check),previous=previousResults.get(key),next=candidateResults.get(key);
   if(check.kind==='visual'){

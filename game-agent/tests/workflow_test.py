@@ -486,6 +486,64 @@ class Workflow(unittest.TestCase):
                 self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
         validator.assert_not_called();self.assertEqual(cp['generation_step'],1)
 
+    def test_measured_proof_skips_model_metadata_and_binds_all_source_hashes(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        cp={'task':'self-review','cursor':17,'base_version':self.first};state={**self.state,'current_task':'self-review'}
+        check={'kind':'ui','selector':'#arena','property':'attribute','attribute':'title','op':'eq','value':'新帮助'}
+        def agent(_cfg,_candidate,_prompt,_log,_state,files):
+            self.assertEqual(files,['main.js']);p=candidate/'game/main.js';p.write_text(p.read_text()+"\ncanvas.title='新帮助';\n");return '实现帮助',0,1
+        def validate(_cfg,_candidate,_source,output,suite):
+            self.assertTrue(suite['discover_proofs']);output.mkdir(parents=True);self.runner.atomic(output/'proof-catalog.json',{'checks':[check]})
+        with patch.object(self.runner,'run_agent',side_effect=agent) as model,patch.object(self.runner,'validate_runtime',side_effect=validate):
+            self.runner.generate(self.cfg,cp,candidate,self.base/'history',candidate.parent,state)
+        self.assertEqual(model.call_count,1);self.assertEqual(cp['stage_results']['1']['completion'],'measured')
+        self.assertEqual(self.runner.proposal(candidate,'self-review'),[check])
+        self.assertEqual(self.runner.measured_checks(cp,candidate),[check])
+        p=candidate/'game/core.js';p.write_text(p.read_text()+'\n// unrelated change\n')
+        with self.assertRaisesRegex(ValueError,'Measured proof source changed'):self.runner.measured_checks(cp,candidate)
+        self.assertEqual(self.runner.failed_generation_step(cp,'Measured proof source changed'),0)
+
+    def test_review_remembers_a_failed_approach_on_same_baseline_without_private_details(self):
+        cp={'task':'self-review','cursor':18,'base_version':self.first}
+        state=copy.deepcopy(self.state)
+        self.runner.remember_failure(state,cp,'Control contract: private details test-control')
+        self.assertNotIn('test-control',json.dumps(state))
+        self.runner.atomic(self.base/'public/state.json',state)
+        prompt=self.runner.make_prompt(cp,self.base/'history')
+        self.assertIn('SAME published source',prompt);self.assertIn('Never add a static label',prompt)
+        state['review_feedback']['index.html,style.css']['baseline']='different'
+        self.runner.atomic(self.base/'public/state.json',state)
+        self.assertNotIn('SAME published source',self.runner.make_prompt(cp,self.base/'history'))
+
+    def test_unchanged_ui_output_does_not_ask_model_to_invent_proof(self):
+        candidate=self.base/'rounds/00001/candidate'
+        shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
+        def agent(_cfg,_candidate,_prompt,_log,_state,files):
+            p=candidate/'game/main.js';p.write_text(p.read_text()+'\n// no observable improvement\n');return 'done',0,1
+        def validate(_cfg,_candidate,_source,output,_suite):
+            output.mkdir(parents=True);self.runner.atomic(output/'proof-catalog.json',{'checks':[]})
+        with patch.object(self.runner,'run_agent',side_effect=agent) as model,patch.object(self.runner,'validate_runtime',side_effect=validate):
+            with self.assertRaisesRegex(ValueError,'No measured UI/Canvas improvement'):
+                self.runner.generate(self.cfg,{'task':'self-review','cursor':17},candidate,self.base/'history',candidate.parent,{**self.state,'current_task':'self-review'})
+        self.assertEqual(model.call_count,1)
+
+    def test_measured_proof_cannot_bypass_final_publication_regression(self):
+        self.release.atomic(self.base/'public/state.json',{**self.state,'topic_index':17})
+        check={'kind':'ui','selector':'#arena','property':'attribute','attribute':'title','op':'eq','value':'帮助'}
+        def agent(_cfg,candidate,_prompt,_log,_state,files):
+            self.assertEqual(files,['main.js']);p=candidate/'game/main.js';p.write_text(p.read_text()+"\ncanvas.title='帮助';\n");return 'done',0,1
+        def validate(_cfg,_candidate,_source,output,suite,**_kwargs):
+            if suite.get('discover_proofs'):
+                output.mkdir(parents=True);self.runner.atomic(output/'proof-catalog.json',{'checks':[check]})
+            else:
+                self.runner.HALT=True;raise ValueError('final browser regression failed')
+        with patch.object(self.runner,'run_agent',side_effect=agent) as model,patch.object(self.runner,'validate_runtime',side_effect=validate),patch.object(self.runner,'clean_container'),patch.object(self.runner,'owner_tree'),patch.object(self.runner.shutil,'disk_usage',return_value=SimpleNamespace(free=64*1024**3)):
+            self.runner.main()
+        state=self.runner.load(self.base/'public/state.json')
+        self.assertEqual(model.call_count,1);self.assertEqual(state['accepted'],0)
+        self.assertEqual(self.release.current(self.base)['version'],self.first)
+
     def test_unchanged_source_never_reaches_acceptance_stage(self):
         candidate=self.base/'rounds/00001/candidate'
         shutil.copytree(self.base/'history',candidate,ignore=shutil.ignore_patterns('.git'))
