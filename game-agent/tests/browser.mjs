@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {chromium} from '/opt/runtime/node_modules/playwright/index.mjs';
 import {checkValue, assertUiResults} from './checks.mjs';
 import {observeScene, uiProofs} from './proofs.mjs';
+import {checkExperience} from './experience.mjs';
 
 const root=process.env.GAME_ROOT||'/workspace/game',out=process.env.OUTPUT_ROOT||'/output';
 const baseline=process.env.BASELINE_ROOT||'/baseline/game';
@@ -30,6 +31,7 @@ const browser=await chromium.launch({headless:true,args:['--no-sandbox','--disab
 const errors=[],external=[];
 const observed={candidate:{},baseline:{}},images={candidate:{},baseline:{}};
 try{
+ if(suite.features.includes('experience-review'))await checkExperience(browser,'http://127.0.0.1:8085/',out);
  for(const mobile of [false,true]){
   const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000},isMobile:mobile,hasTouch:mobile,deviceScaleFactor:1});
   await context.addInitScript(()=>{Math.random=()=>.625;});

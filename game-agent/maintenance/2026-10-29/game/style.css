@@ -1,0 +1,109 @@
+:root {
+ color-scheme: dark;
+ --bg: #0a141a;
+ --panel: #102029;
+ --line: #29404b;
+ --text: #e7ece6;
+ --muted: #a3b5ba;
+ --mint: #a5edba;
+ --orange: #f8a16b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: "Trebuchet MS", "Noto Sans CJK SC", sans-serif; background-image: radial-gradient(ellipse at 80% 60%, #16303977, transparent 60%); }
+a { color: inherit; text-decoration: none; }
+header, footer { max-width: 1440px; margin: auto; padding: 26px 5%; display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 13px; letter-spacing: .07em; }
+header { border-bottom: 1px solid var(--line); }
+header a { min-height: 44px; display: inline-flex; align-items: center; }
+.brand { font: 700 19px Georgia, serif; letter-spacing: .12em; white-space: nowrap; }
+.brand small { font-size: 12px; color: var(--muted); margin-left: 14px; }
+main { max-width: 1440px; margin: 7vh auto 8vh; padding: 0 5%; display: grid; grid-template-columns: minmax(0, 31fr) minmax(0, 69fr); align-items: center; }
+.intro { padding-right: 28px; }
+.eyebrow { font: 11px monospace; letter-spacing: .16em; color: var(--mint); }
+h1 { font: clamp(36px, 4vw, 62px)/1.25 Georgia, "Noto Serif CJK SC", serif; letter-spacing: -.03em; margin: 25px 0; }
+h1 em { font-style: normal; color: var(--mint); }
+.intro > p:not(.eyebrow) { font-size: 13px; line-height: 1.9; color: var(--muted); }
+.legend { display: flex; gap: 15px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin: 34px 0; }
+.legend i { display: inline-block; width: 7px; height: 7px; transform: rotate(45deg); margin-right: 5px; }
+.friendly { background: var(--mint); }
+.hostile { background: var(--orange); }
+.instructions { border-top: 1px solid var(--line); padding-top: 19px; }
+.station { min-width: 0; border: 1px solid #35505b; background: #0c1921; box-shadow: 0 30px 80px #0004; }
+.hud { display: flex; align-items: center; gap: 20px; padding: 16px 20px; background: var(--panel); }
+.stats { flex: 1; min-width: 0; display: grid; grid-template-columns: 1.25fr .8fr .8fr 1fr; gap: 16px; }
+.stats > div { min-width: 0; }
+.stats span { display: block; white-space: nowrap; font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+.stats strong { display: block; font: 400 24px/1 monospace; font-variant-numeric: tabular-nums; }
+.controls { display: flex; align-items: stretch; gap: 8px; }
+button { font: inherit; cursor: pointer; touch-action: manipulation; }
+.controls button { min-width: 72px; min-height: 48px; padding: 8px 12px; color: var(--text); border: 1px solid var(--line); background: transparent; white-space: nowrap; }
+.controls #shield-btn { min-width: 124px; border-color: #609a86; color: var(--mint); }
+#shield-btn small { display: block; margin-top: 4px; font-size: 10px; font-weight: 400; }
+#shield-btn[aria-pressed="true"] { background: #1d4a48; border-color: var(--mint); }
+button:disabled { cursor: default; opacity: .6; }
+button:not(:disabled):hover { border-color: var(--mint); }
+.viewport { position: relative; aspect-ratio: 3/2; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; cursor: crosshair; }
+#overlay { position: absolute; inset: 0; background: #09151ceb; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 22px; overflow-y: auto; }
+[hidden] { display: none !important; }
+#overlay p { margin: 0; }
+h2 { font: 26px/1.35 Georgia, "Noto Serif CJK SC", serif; margin: 0; }
+#result-detail { font-size: 13px; color: var(--muted); line-height: 1.6; }
+#start { flex-shrink: 0; background: var(--mint); color: #10291d; border: 0; margin: 8px 0 4px; padding: 14px 30px; min-height: 48px; min-width: 150px; font-size: 14px; font-weight: 700; }
+#flight-guide { max-width: 390px; font-size: 12px; color: var(--muted); line-height: 1.7; }
+#flight-guide p + p { margin-top: 5px; }
+#flight-guide b { color: var(--text); font-weight: 400; margin-right: 7px; }
+#flight-guide .supply-tip { font-size: 11px; }
+#first-run-hint { max-width: 390px; color: var(--mint); font-size: 11px; line-height: 1.6; }
+#pause-message { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; background: #09151cbd; text-align: center; pointer-events: none; }
+#pause-message strong { font: 26px Georgia, "Noto Serif CJK SC", serif; }
+#pause-message span { color: var(--muted); font-size: 12px; }
+#wave-notice { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); white-space: nowrap; padding: 8px 14px; border: 1px solid #629c88; background: #102b2ce8; color: var(--mint); font: 700 14px monospace; text-align: center; pointer-events: none; }
+button:focus-visible, a:focus-visible, #first-run-hint:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
+canvas:focus-visible { outline: 2px solid var(--mint); outline-offset: -3px; }
+.crosshair { position: absolute; bottom: 10px; left: 14px; color: #416473; pointer-events: none; }
+.statusline { border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; padding: 11px 16px; color: var(--muted); font: 10px monospace; }
+.statusline b { color: var(--mint); }
+#status-bar { color: var(--text); white-space: nowrap; }
+footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; line-height: 1.7; }
+footer span { font: 10px monospace; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px !important; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 1100px) {
+ .hud { flex-wrap: wrap; gap: 14px; }
+ .stats { flex-basis: 100%; }
+ .controls { width: 100%; }
+ .controls button { flex: 1; }
+}
+@media (max-width: 850px) {
+ header { padding: 10px 4%; font-size: 12px; }
+ main { grid-template-columns: minmax(0, 1fr); margin: 24px auto; padding: 0 4%; }
+ .intro { padding: 0 0 16px; }
+ .intro h1 { font-size: 30px; margin: 12px 0 0; }
+ .intro h1 br { display: none; }
+ .intro > p:not(.eyebrow), .legend, .instructions { display: none; }
+ .intro .eyebrow { margin: 0; }
+ .brand small { display: none; }
+ .hud { padding: 12px; gap: 12px; }
+ .stats { gap: 10px; }
+ .stats strong { font-size: 21px; }
+ .controls button { min-height: 44px; }
+ .viewport { aspect-ratio: 3/3.1; }
+ #overlay { padding: 16px; gap: 9px; }
+ h2 { font-size: 23px; }
+ #flight-guide { font-size: 11px; }
+ #flight-guide .supply-tip { font-size: 10px; }
+ #first-run-hint { font-size: 10px; }
+ .statusline { font-size: 9px; padding: 10px; }
+ .statusline > span:last-child { display: none; }
+ footer { padding: 16px 4%; }
+ footer span { display: none; }
+}
+@media (max-width: 360px) {
+ .brand { font-size: 16px; letter-spacing: .08em; }
+ .intro h1 { font-size: 27px; }
+ #overlay { padding: 12px; gap: 7px; }
+ h2 { font-size: 21px; }
+ #result-detail { font-size: 11px; }
+ #start { margin: 2px 0; }
+}
+@media (min-width: 601px) and (max-width: 850px) { .viewport { aspect-ratio: 3/2; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }

@@ -1,0 +1,13 @@
+{
+  "task": "maintenance-ux",
+  "checks": [
+    {
+      "kind": "ui",
+      "selector": "#shield-status",
+      "phase": "ready",
+      "property": "text",
+      "op": "contains",
+      "value": "就绪"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 const phases={preparing:'准备中',generating:'模型开发中',testing:'回归测试',cooldown:'轮次间歇',paused:'已暂停',stopped:'已结束',completed:'一周已完成',interrupted:'正在恢复','waiting-disk':'等待磁盘空间'};
-const tasks={'pause-overlay':'暂停提示层','best-score':'最高战绩','enemy-types':'敌机种类','wave-feedback':'波次提示','health-pickup':'补给机制','weapon-upgrade':'武器升级','hit-feedback':'命中反馈','touch-controls':'手机操控','difficulty':'难度平衡','accessibility':'操作与无障碍','boss':'精英敌机','shield':'防御能力','visual-polish':'画面完善','performance':'性能与生命周期','onboarding':'新手引导','self-review':'自主审查与改进','maintenance-canvas':'画布稳定性修复'};
+const tasks={'pause-overlay':'暂停提示层','best-score':'最高战绩','enemy-types':'敌机种类','wave-feedback':'波次提示','health-pickup':'补给机制','weapon-upgrade':'武器升级','hit-feedback':'命中反馈','touch-controls':'手机操控','difficulty':'难度平衡','accessibility':'操作与无障碍','boss':'精英敌机','shield':'防御能力','visual-polish':'画面完善','performance':'性能与生命周期','onboarding':'新手引导','self-review':'自主审查与改进','maintenance-canvas':'画布稳定性修复','maintenance-ux':'手机布局与护盾体验优化'};
 let lastVersion='';
 function date(value){return new Date(value*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});}
 async function refresh(){

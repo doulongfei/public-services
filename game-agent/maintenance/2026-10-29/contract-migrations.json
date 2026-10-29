@@ -1,0 +1,23 @@
+[
+  {
+    "previous": {
+      "kind": "ui",
+      "selector": "#shield-btn",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "title",
+      "op": "contains",
+      "value": "冷却中"
+    },
+    "reason": "零冷却且未激活时应显示就绪；新增真实输入与冷却回归替代错误文案契约。",
+    "replacement": {
+      "kind": "ui",
+      "selector": "#shield-btn",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "title",
+      "op": "contains",
+      "value": "就绪"
+    }
+  }
+]

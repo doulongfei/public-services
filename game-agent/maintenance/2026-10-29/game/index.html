@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+ <meta name="description" content="星港守卫：无需登录的生存射击小游戏，支持键盘与手机触控。">
+ <title>星港守卫 · STARHARBOR</title>
+ <link rel="stylesheet" href="style.css">
+</head>
+<body>
+ <header>
+  <a class="brand" href="/">✦ STARHARBOR <small>星港守卫</small></a>
+  <a href="https://lab.doufei.eu.org/" target="_blank" rel="noopener">迭代日志 ↗</a>
+ </header>
+ <main>
+  <section class="intro">
+   <p class="eyebrow">SECTOR 07 / LAST SIGNAL</p>
+   <h1>守住最后的<br><em>一束光。</em></h1>
+   <p>无人机正在接近星港。驾驶巡航艇穿越碎片，<br>自动锁定目标，尽可能久地守住航线。</p>
+   <div class="legend"><span><i class="friendly"></i> 你 / 巡航艇</span><span><i class="hostile"></i> 入侵无人机</span></div>
+   <p class="instructions">WASD / 方向键移动 · P 暂停<br>空格 / Shift 护盾 · 手机拖动战区移动</p>
+  </section>
+  <section class="station" aria-label="游戏区域">
+   <div class="hud">
+    <div class="stats">
+     <div><span>存活时间</span><strong id="time">00:00</strong></div>
+     <div><span>得分</span><strong id="score">0</strong></div>
+     <div><span>船体</span><strong id="health">100</strong></div>
+     <div id="best-score"><span>最高纪录</span><strong id="best">0</strong></div>
+    </div>
+    <div class="controls">
+     <button id="pause" type="button" aria-label="暂停游戏" aria-pressed="false" disabled>Ⅱ 暂停</button>
+     <button id="shield-btn" type="button" aria-label="启动护盾" aria-pressed="false" aria-describedby="shield-status" disabled>
+      <span>护盾</span><small id="shield-status" aria-live="polite" aria-atomic="true">护盾:就绪</small>
+     </button>
+    </div>
+   </div>
+   <p id="game-guide" class="sr-only" role="note" aria-label="操作指南">WASD 或方向键移动，手机拖动战区移动，武器自动瞄准射击。空格、Shift 或护盾按钮启动 1.2 秒护盾，冷却 4 秒。P 暂停或继续，Escape 暂停。</p>
+   <div class="viewport">
+    <canvas id="arena" width="900" height="600" tabindex="0" role="application" aria-label="星港守卫游戏区域" aria-describedby="game-guide"></canvas>
+    <div id="overlay" role="dialog" aria-labelledby="result-title" aria-describedby="result-detail">
+     <p class="eyebrow">SYSTEM READY</p>
+     <h2 id="result-title">星港等待你的信号</h2>
+     <p id="result-detail">移动躲避，武器会自动瞄准。</p>
+     <button id="start" type="button" aria-describedby="first-run-tip">开始游戏 →</button>
+     <div id="flight-guide">
+      <p><b>移动</b> WASD / 方向键 · 手机单指拖动</p>
+      <p><b>护盾</b> 空格 / Shift / 护盾按钮 · P 暂停</p>
+      <p class="supply-tip">生存:拾取补给(绿色生命+25)。击杀15得 Lv2 武器，30得 Lv3 武器。</p>
+     </div>
+     <p id="first-run-hint" role="status" aria-live="polite" aria-atomic="true" tabindex="0">武器自动开火，护盾可短暂抵挡碰撞。</p>
+     <p id="first-run-tip" class="sr-only">电脑：WASD/方向键移动 · 自动射击。手机：单指拖动战场。P 暂停。绿色补给 +25 生命。空格、Shift 或护盾按钮可启动护盾。</p>
+    </div>
+    <div id="pause-message" role="status" aria-live="polite" hidden><strong>航线已暂停</strong><span>P 或「继续」返回战场</span></div>
+    <div id="wave-notice" role="status" aria-live="polite" hidden></div>
+    <div class="crosshair" aria-hidden="true">+</div>
+   </div>
+   <div class="statusline">
+    <span id="status-bar"><b>●</b> 航道已连接 · 等待信号…</span>
+    <span id="wave">第 1 波</span><span>本地运行 · 无需登录</span>
+   </div>
+   <div id="game-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  </section>
+ </main>
+ <footer>一周创造实验 / OCI 本地模型共创 <span>STARHARBOR · 随时再出航</span></footer>
+ <script type="module" src="main.js"></script>
+</body>
+</html>

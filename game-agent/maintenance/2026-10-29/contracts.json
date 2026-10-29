@@ -1,0 +1,465 @@
+{
+  "checks": [
+    {
+      "kind": "ui",
+      "selector": "#pause-message",
+      "phase": "paused",
+      "property": "visible",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "kind": "ui",
+      "selector": "#best-score",
+      "phase": "playing",
+      "property": "text",
+      "op": "contains",
+      "value": "最高"
+    },
+    {
+      "kind": "core",
+      "initial": {
+        "spawn": 0
+      },
+      "steps": 1,
+      "path": "enemies.0.kind",
+      "op": "exists"
+    },
+    {
+      "kind": "core",
+      "initial": {
+        "time": 19.99,
+        "spawn": 999
+      },
+      "path": "waveNotice.life",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "kind": "core",
+      "path": "pickups",
+      "op": "exists"
+    },
+    {
+      "kind": "core",
+      "initial": {
+        "score": 100
+      },
+      "path": "level",
+      "op": "gt",
+      "value": 1
+    },
+    {
+      "kind": "core",
+      "initial": {
+        "spawn": 999,
+        "shot": 999,
+        "enemies": [
+          {
+            "x": 450,
+            "y": 300,
+            "hp": 1,
+            "speed": 0,
+            "r": 11
+          }
+        ]
+      },
+      "path": "damageFlash",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "kind": "core",
+      "initial": {},
+      "steps": 1,
+      "path": "hp",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "kind": "ui",
+      "selector": "#best",
+      "phase": "playing",
+      "property": "text",
+      "op": "contains",
+      "value": "0"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "op": "exists",
+      "value": true
+    },
+    {
+      "kind": "core",
+      "initial": {},
+      "steps": 1,
+      "path": "maxHp",
+      "op": "eq",
+      "value": 100
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena"
+    },
+    {
+      "kind": "ui",
+      "selector": "#arena",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "tabindex",
+      "op": "eq",
+      "value": "0"
+    },
+    {
+      "kind": "core",
+      "initial": {
+        "time": 120,
+        "spawn": 0
+      },
+      "path": "enemies.0.isBoss",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena"
+    },
+    {
+      "kind": "core",
+      "initial": {
+        "spawn": 999,
+        "shot": 999,
+        "bullets": [
+          {
+            "x": -100,
+            "y": -100,
+            "vx": -1,
+            "vy": -1,
+            "life": 2
+          }
+        ]
+      },
+      "path": "bullets.length",
+      "op": "eq",
+      "value": 0
+    },
+    {
+      "kind": "ui",
+      "selector": "#flight-guide",
+      "phase": "ready",
+      "property": "text",
+      "op": "contains",
+      "value": "15"
+    },
+    {
+      "kind": "core",
+      "input": {
+        "shield": true
+      },
+      "path": "shield.cooldown",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "kind": "core",
+      "initial": {
+        "time": 1000,
+        "spawn": 0
+      },
+      "path": "spawn",
+      "op": "gte",
+      "value": 0.35
+    },
+    {
+      "kind": "ui",
+      "selector": "#shield-btn",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "aria-pressed",
+      "op": "eq",
+      "value": "false"
+    },
+    {
+      "kind": "ui",
+      "selector": "#shield-btn",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "title",
+      "op": "contains",
+      "value": "就绪"
+    },
+    {
+      "kind": "ui",
+      "selector": "#overlay",
+      "phase": "ready",
+      "property": "attribute",
+      "attribute": "role",
+      "op": "eq",
+      "value": "dialog"
+    },
+    {
+      "kind": "ui",
+      "selector": "#wave-notice",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "role",
+      "op": "eq",
+      "value": "status"
+    },
+    {
+      "kind": "ui",
+      "selector": "#pause-message",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "role",
+      "op": "eq",
+      "value": "status"
+    },
+    {
+      "kind": "ui",
+      "selector": "#pause",
+      "phase": "ready",
+      "property": "attribute",
+      "attribute": "aria-pressed",
+      "op": "eq",
+      "value": "false"
+    },
+    {
+      "kind": "ui",
+      "selector": "#pause",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "aria-pressed",
+      "op": "eq",
+      "value": "false"
+    },
+    {
+      "kind": "ui",
+      "selector": "#pause",
+      "phase": "paused",
+      "property": "attribute",
+      "attribute": "aria-pressed",
+      "op": "eq",
+      "value": "true"
+    },
+    {
+      "kind": "ui",
+      "selector": "#arena",
+      "phase": "ready",
+      "property": "attribute",
+      "attribute": "role",
+      "op": "eq",
+      "value": "application"
+    },
+    {
+      "kind": "ui",
+      "selector": "#score",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "aria-label",
+      "op": "exists"
+    },
+    {
+      "kind": "ui",
+      "selector": "#health",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "aria-label",
+      "op": "exists"
+    },
+    {
+      "kind": "ui",
+      "selector": "#time",
+      "phase": "playing",
+      "property": "attribute",
+      "attribute": "aria-label",
+      "op": "exists"
+    },
+    {
+      "kind": "core",
+      "initial": {
+        "spawn": 999,
+        "shot": 999
+      },
+      "steps": 180,
+      "path": "waveNotice.life",
+      "op": "gte",
+      "value": 0
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "playing"
+    },
+    {
+      "kind": "ui",
+      "selector": "#time",
+      "phase": "ready",
+      "op": "contains",
+      "property": "attribute",
+      "attribute": "aria-label",
+      "value": "存活时间 00:00"
+    },
+    {
+      "kind": "ui",
+      "selector": "#flight-guide",
+      "phase": "ready",
+      "op": "contains",
+      "property": "text",
+      "value": ":拾取补给(绿色生命+25)。击杀15得 Lv2 "
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "ready"
+    },
+    {
+      "kind": "ui",
+      "selector": "#game-guide",
+      "phase": "ready",
+      "op": "contains",
+      "property": "attribute",
+      "attribute": "aria-label",
+      "value": "操作指南"
+    },
+    {
+      "kind": "ui",
+      "selector": "#first-run-hint",
+      "phase": "ready",
+      "op": "eq",
+      "property": "attribute",
+      "attribute": "aria-live",
+      "value": "polite"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "ready"
+    },
+    {
+      "kind": "ui",
+      "selector": "#first-run-tip",
+      "phase": "ready",
+      "op": "contains",
+      "property": "text",
+      "value": "电脑：WASD/方向键移动 · 自动射击。手机：单指拖动战场。P 暂停。绿色补给 +25 生命。"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "ready"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "playing"
+    },
+    {
+      "kind": "ui",
+      "selector": "#arena",
+      "phase": "ready",
+      "op": "contains",
+      "property": "attribute",
+      "attribute": "aria-describedby",
+      "value": "game-guide"
+    },
+    {
+      "kind": "ui",
+      "selector": "#start",
+      "phase": "ready",
+      "op": "contains",
+      "property": "attribute",
+      "attribute": "aria-describedby",
+      "value": "first-run-tip"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "ready"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "ready"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "ready"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "playing"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "ready"
+    },
+    {
+      "kind": "ui",
+      "selector": "#shield-status",
+      "phase": "ready",
+      "op": "eq",
+      "property": "attribute",
+      "attribute": "aria-live",
+      "value": "polite"
+    },
+    {
+      "kind": "ui",
+      "selector": "#first-run-hint",
+      "phase": "ready",
+      "op": "eq",
+      "property": "attribute",
+      "attribute": "tabindex",
+      "value": "0"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "ready"
+    },
+    {
+      "kind": "visual",
+      "selector": "#arena",
+      "phase": "ready"
+    },
+    {
+      "kind": "ui",
+      "selector": "#status-bar",
+      "phase": "ready",
+      "op": "contains",
+      "property": "text",
+      "value": "● 航道已连接 · 等待信号…"
+    },
+    {
+      "kind": "ui",
+      "selector": "#shield-status",
+      "phase": "ready",
+      "property": "text",
+      "op": "contains",
+      "value": "就绪"
+    }
+  ],
+  "features": [
+    "accessibility",
+    "best-score",
+    "boss",
+    "difficulty",
+    "enemy-types",
+    "health-pickup",
+    "hit-feedback",
+    "onboarding",
+    "pause-overlay",
+    "performance",
+    "self-review",
+    "shield",
+    "touch-controls",
+    "visual-polish",
+    "wave-feedback",
+    "weapon-upgrade",
+    "experience-review"
+  ]
+}
