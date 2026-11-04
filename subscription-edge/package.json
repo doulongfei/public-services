@@ -1,0 +1,9 @@
+{
+  "name": "lf-subscription-edge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test-worker.mjs"
+  },
+  "engines": { "node": ">=24" }
+}

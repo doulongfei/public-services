@@ -14,6 +14,8 @@ IT-Tools 大多在浏览器计算；BentoPDF 的文件处理在浏览器本地�
 
 小游戏“星港守卫”已加入同一台 OCI：试玩 https://game.doufei.eu.org/ ，进度与所有者控制 https://lab.doufei.eu.org/ 。一周内由本地模型分轮改进，通过固定测试才自动发布；运行时间、目录、限制和运维见 [game-agent/README.md](game-agent/README.md)。
 
+订阅和规则下载已通过 Cloudflare Worker + KV 独立分发，Sub-Store 管理后台通过专用 Tunnel 连接 OCI。原订阅链接保持不变，部署、运行目录和恢复方式见 [subscription-edge/README.md](subscription-edge/README.md)。
+
 ## Docker 选型
 
 服务器已运行 Docker 和 Sub-Store，因此复用现有 Docker Engine 与 Compose。每个应用保留独立容器、资源上限和源码版本，宿主机 Caddy 负责 HTTPS。直接安装 Node、Python、翻译模型及不同项目依赖，会增加宿主机的依赖耦合；本方案将这些依赖放在各自镜像中。

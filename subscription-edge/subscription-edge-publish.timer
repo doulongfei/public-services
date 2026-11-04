@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Cloudflare subscription snapshot every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnCalendar=*-*-* *:00,15,30,45:00 UTC
+RandomizedDelaySec=20
+Persistent=true
+Unit=subscription-edge-publish.service
+
+[Install]
+WantedBy=timers.target

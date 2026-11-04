@@ -1,0 +1,16 @@
+{
+  "name": "subscription-edge",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-04",
+  "workers_dev": false,
+  "observability": { "enabled": false },
+  "kv_namespaces": [
+    { "binding": "SNAPSHOTS", "id": "REPLACE_WITH_DEDICATED_KV_NAMESPACE_ID" }
+  ],
+  "routes": [
+    { "pattern": "sub.lfdou.dpdns.org/share/*", "zone_name": "lfdou.dpdns.org" },
+    { "pattern": "sub.lfdou.dpdns.org/rules/*", "zone_name": "lfdou.dpdns.org" },
+    { "pattern": "sub.lfdou.dpdns.org/__publish*", "zone_name": "lfdou.dpdns.org" },
+    { "pattern": "sub.lfdou.dpdns.org/__health", "zone_name": "lfdou.dpdns.org" }
+  ]
+}

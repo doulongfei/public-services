@@ -1,0 +1,8 @@
+{
+  "source_url": "http://127.0.0.1:3000/share/file/main?token=REPLACE_WITH_EXISTING_SUBSCRIPTION_TOKEN",
+  "publish_base": "https://sub.lfdou.dpdns.org",
+  "public_base": "https://sub.lfdou.dpdns.org",
+  "publish_token": "REPLACE_WITH_SEPARATE_RANDOM_PUBLISH_TOKEN",
+  "rules_directory": "/var/lib/proxy-rules/current",
+  "state_file": "/var/lib/subscription-edge/state.json"
+}

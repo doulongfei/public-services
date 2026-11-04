@@ -1,0 +1,25 @@
+[Unit]
+Description=Cloudflare Tunnel for Sub-Store administration
+After=network-online.target caddy.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+LoadCredential=tunnel-token:/etc/subscription-edge/tunnel-token
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel --protocol http2 --edge-ip-version 4 --metrics 127.0.0.1:20243 run --token-file %d/tunnel-token
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=256M
+MemorySwapMax=0
+CPUQuota=50%
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
